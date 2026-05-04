@@ -9,6 +9,7 @@ with open("data/daily.json", "r", encoding="utf-8") as f:
 
 # Canvas
 W, H = 1080, 1080
+
 BG = "#0D1117"
 CARD = "#111827"
 ROW = "#0F172A"
@@ -18,6 +19,7 @@ RED = "#EF4444"
 WHITE = "#FFFFFF"
 GRAY = "#A3AAB8"
 BORDER = "#334155"
+
 
 img = Image.new("RGB", (W, H), BG)
 draw = ImageDraw.Draw(img)
@@ -30,8 +32,8 @@ font_brand = ImageFont.truetype(font_path, 76)
 font_sub = ImageFont.truetype(font_path, 32)
 font_stock = ImageFont.truetype(font_path, 58)
 font_row = ImageFont.truetype(font_path, 42)
-font_note = ImageFont.truetype(font_path, 30)
-font_footer = ImageFont.truetype(font_path, 26)
+font_note = ImageFont.truetype(font_path, 28)
+font_footer = ImageFont.truetype(font_path, 25)
 
 
 def text_center(x, y, text, font, color):
@@ -52,8 +54,8 @@ def paste_logo():
         logo = logo.resize((118, 118))
 
         mask = Image.new("L", (118, 118), 0)
-        md = ImageDraw.Draw(mask)
-        md.ellipse((0, 0, 118, 118), fill=255)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.ellipse((0, 0, 118, 118), fill=255)
 
         img.paste(logo, (481, 88), mask)
     except Exception:
@@ -62,9 +64,10 @@ def paste_logo():
 
 # Background glow
 glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-gd = ImageDraw.Draw(glow)
-gd.ellipse((280, -160, 800, 340), fill=(240, 180, 41, 35))
+glow_draw = ImageDraw.Draw(glow)
+glow_draw.ellipse((280, -160, 800, 340), fill=(240, 180, 41, 35))
 glow = glow.filter(ImageFilter.GaussianBlur(70))
+
 img = Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB")
 draw = ImageDraw.Draw(img)
 
@@ -92,7 +95,7 @@ draw.line((190, 365, 890, 365), fill=GOLD, width=4)
 # Stock title
 stock_name = data.get("stock_name", "")
 symbol = data.get("symbol", "")
-text_center(540, 435, f"{stock_name} - {symbol}", font_stock, WHITE)
+text_center(540, 430, f"{stock_name} - {symbol}", font_stock, WHITE)
 
 
 # Rows
@@ -105,24 +108,24 @@ rows = [
     ("الزخم", data.get("momentum", ""), WHITE),
 ]
 
-y = 525
+y = 500
 
 for label, value, color in rows:
     draw.rounded_rectangle(
-        (175, y - 34, 905, y + 34),
-        radius=18,
+        (175, y - 31, 905, y + 31),
+        radius=17,
         fill=ROW,
         outline="#1F2937",
         width=1
     )
 
     text_center(540, y, f"{label}: {value}", font_row, color)
-    y += 72
+    y += 64
 
 
 # Note box
 draw.rounded_rectangle(
-    (120, 830, 960, 920),
+    (120, 800, 960, 890),
     radius=26,
     fill="#0B0F19",
     outline=BORDER,
@@ -130,12 +133,25 @@ draw.rounded_rectangle(
 )
 
 note = data.get("note", "")
-text_center(540, 875, note, font_note, GRAY)
+text_center(540, 845, note, font_note, GRAY)
 
 
 # Footer
-text_center(540, 952, "محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية", font_footer, GRAY)
-draw.text((540, 1000), "t.me/TASI_Smart", fill="#64748B", font=font_footer, anchor="mm")
+text_center(
+    540,
+    935,
+    "محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية",
+    font_footer,
+    GRAY
+)
+
+draw.text(
+    (540, 985),
+    "t.me/TASI_Smart",
+    fill="#64748B",
+    font=font_footer,
+    anchor="mm"
+)
 
 
 # Save
