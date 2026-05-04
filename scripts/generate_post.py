@@ -5,37 +5,34 @@ from bidi.algorithm import get_display
 
 
 def ar(text):
-    """Fix Arabic shaping and RTL display for PIL."""
-    if text is None:
+    if not text:
         return ""
     reshaped = arabic_reshaper.reshape(str(text))
     return get_display(reshaped)
 
 
-# Load data
+# تحميل البيانات
 with open("data/daily.json", "r", encoding="utf-8") as f:
     data = json.load(f)
 
 
-# Image settings
+# إعداد الصورة
 width, height = 1080, 1080
-bg = "#0D1117"
-
-img = Image.new("RGB", (width, height), bg)
+img = Image.new("RGB", (width, height), "#0D1117")
 draw = ImageDraw.Draw(img)
 
 
-# Fonts
+# تحميل الخط
 font_path = "assets/Tajawal-Bold.ttf"
 
 font_title = ImageFont.truetype(font_path, 78)
-font_stock = ImageFont.truetype(font_path, 58)
+font_stock = ImageFont.truetype(font_path, 60)
 font_text = ImageFont.truetype(font_path, 44)
 font_note = ImageFont.truetype(font_path, 34)
 font_footer = ImageFont.truetype(font_path, 28)
 
 
-# Colors
+# الألوان
 gold = "#F0B429"
 green = "#22C55E"
 red = "#EF4444"
@@ -45,7 +42,7 @@ dark_card = "#111827"
 border = "#2D3748"
 
 
-# Background card
+# الخلفية (كرت)
 draw.rounded_rectangle(
     (70, 70, 1010, 1010),
     radius=40,
@@ -55,48 +52,67 @@ draw.rounded_rectangle(
 )
 
 
-# Header
-draw.text((540, 145), ar(data.get("brand", "مضارب")), fill=gold, font=font_title, anchor="mm")
-draw.text((540, 215), ar("تحليل الأسهم السعودية"), fill=white, font=font_note, anchor="mm")
-
-# Separator
-draw.line((180, 280, 900, 280), fill=gold, width=3)
+# العنوان
+draw.text((540, 150), ar(data["brand"]), fill=gold, font=font_title, anchor="mm")
+draw.text((540, 220), ar("تحليل الأسهم السعودية"), fill=white, font=font_note, anchor="mm")
 
 
-# Stock title
-stock_title = f"{data.get('stock_name', '')} — {data.get('symbol', '')}"
-draw.text((540, 350), ar(stock_title), fill=white, font=font_stock, anchor="mm")
+# خط فاصل
+draw.line((200, 280, 880, 280), fill=gold, width=3)
 
 
-# Data rows
+# اسم السهم (مهم: فصل العربي عن الرقم)
+stock_name = ar(data["stock_name"])
+symbol = data["symbol"]
+
+draw.text((540, 350), f"{symbol} — {stock_name}", fill=white, font=font_stock, anchor="mm")
+
+
+# البيانات
+y = 450
+
 rows = [
-    (f"السعر الحالي: {data.get('price', '')} ريال", white),
-    (f"نقطة الدخول: {data.get('entry', '')} ريال", gold),
-    (f"الهدف الأول: {data.get('target1', '')} ريال", green),
-    (f"الهدف الثاني: {data.get('target2', '')} ريال", green),
-    (f"وقف الخسارة: {data.get('stop_loss', '')} ريال", red),
-    (f"الزخم: {data.get('momentum', '')}", white),
+    ("السعر الحالي", data["price"], white),
+    ("نقطة الدخول", data["entry"], gold),
+    ("الهدف الأول", data["target1"], green),
+    ("الهدف الثاني", data["target2"], green),
+    ("وقف الخسارة", data["stop_loss"], red),
+    ("الزخم", data["momentum"], white),
 ]
 
-y = 445
-for text, color in rows:
-    draw.text((540, y), ar(text), fill=color, font=font_text, anchor="mm")
-    y += 72
+
+for label, value, color in rows:
+    label_ar = ar(label)
+
+    # إذا رقم → أضف ريال
+    if str(value).replace(".", "").isdigit():
+        text = f"{value} ريال :{label_ar}"
+    else:
+        text = f"{value} :{label_ar}"
+
+    draw.text((540, y), text, fill=color, font=font_text, anchor="mm")
+    y += 70
 
 
-# Note box
-note_box = (130, 820, 950, 910)
-draw.rounded_rectangle(note_box, radius=25, fill="#0B0F19", outline=border, width=2)
+# صندوق الملاحظة
+draw.rounded_rectangle(
+    (130, 820, 950, 910),
+    radius=25,
+    fill="#0B0F19",
+    outline=border,
+    width=2
+)
 
-note = data.get("note", "")
-draw.text((540, 865), ar(note), fill=gray, font=font_note, anchor="mm")
+note = ar(data["note"])
+draw.text((540, 865), note, fill=gray, font=font_note, anchor="mm")
 
 
-# Footer disclaimer
-footer = "⚠️ محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية"
-draw.text((540, 955), ar(footer), fill=gray, font=font_footer, anchor="mm")
+# الفوتر
+footer = ar("⚠️ محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية")
+draw.text((540, 960), footer, fill=gray, font=font_footer, anchor="mm")
 
 
-# Save
+# حفظ الصورة
 img.save("output.png", quality=95)
-print("Professional Arabic post generated successfully.")
+
+print("Final professional Arabic post generated successfully!")
