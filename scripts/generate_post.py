@@ -1,5 +1,6 @@
 import json
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import textwrap
 
 
 # Load data
@@ -20,7 +21,6 @@ WHITE = "#FFFFFF"
 GRAY = "#A3AAB8"
 BORDER = "#334155"
 
-
 img = Image.new("RGB", (W, H), BG)
 draw = ImageDraw.Draw(img)
 
@@ -32,17 +32,17 @@ font_brand = ImageFont.truetype(font_path, 76)
 font_sub = ImageFont.truetype(font_path, 32)
 font_stock = ImageFont.truetype(font_path, 58)
 font_row = ImageFont.truetype(font_path, 42)
-font_note = ImageFont.truetype(font_path, 28)
+font_note = ImageFont.truetype(font_path, 30)
 font_footer = ImageFont.truetype(font_path, 25)
 
 
-def text_center(x, y, text, font, color):
+def text_right(x, y, text, font, color):
     draw.text(
         (x, y),
         str(text),
         fill=color,
         font=font,
-        anchor="mm",
+        anchor="rm",
         direction="rtl",
         language="ar"
     )
@@ -54,106 +54,74 @@ def paste_logo():
         logo = logo.resize((118, 118))
 
         mask = Image.new("L", (118, 118), 0)
-        mask_draw = ImageDraw.Draw(mask)
-        mask_draw.ellipse((0, 0, 118, 118), fill=255)
+        ImageDraw.Draw(mask).ellipse((0, 0, 118, 118), fill=255)
 
         img.paste(logo, (481, 88), mask)
-    except Exception:
+    except:
         pass
 
 
-# Background glow
+# Glow
 glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-glow_draw = ImageDraw.Draw(glow)
-glow_draw.ellipse((280, -160, 800, 340), fill=(240, 180, 41, 35))
+ImageDraw.Draw(glow).ellipse((280, -160, 800, 340), fill=(240, 180, 41, 35))
 glow = glow.filter(ImageFilter.GaussianBlur(70))
-
 img = Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB")
 draw = ImageDraw.Draw(img)
 
 
-# Main card
-draw.rounded_rectangle(
-    (65, 65, 1015, 1015),
-    radius=44,
-    fill=CARD,
-    outline=BORDER,
-    width=3
-)
+# Card
+draw.rounded_rectangle((65, 65, 1015, 1015), radius=44, fill=CARD, outline=BORDER, width=3)
 
 paste_logo()
-draw = ImageDraw.Draw(img)
 
 
 # Header
-text_center(540, 245, "مضارب", font_brand, GOLD)
-text_center(540, 305, "تحليل فني وتعليمي لسوق الأسهم السعودية", font_sub, WHITE)
+draw.text((540, 245), "مضارب", fill=GOLD, font=font_brand, anchor="mm", direction="rtl")
+draw.text((540, 305), "تحليل فني وتعليمي لسوق الأسهم السعودية", fill=WHITE, font=font_sub, anchor="mm", direction="rtl")
 
 draw.line((190, 365, 890, 365), fill=GOLD, width=4)
 
 
-# Stock title
-stock_name = data.get("stock_name", "")
-symbol = data.get("symbol", "")
-text_center(540, 430, f"{stock_name} - {symbol}", font_stock, WHITE)
+# Stock
+text_right(900, 430, f"{data['stock_name']} - {data['symbol']}", font_stock, WHITE)
 
 
 # Rows
 rows = [
-    ("السعر الحالي", f"{data.get('price', '')} ريال", WHITE),
-    ("نقطة الدخول", f"{data.get('entry', '')} ريال", GOLD),
-    ("الهدف الأول", f"{data.get('target1', '')} ريال", GREEN),
-    ("الهدف الثاني", f"{data.get('target2', '')} ريال", GREEN),
-    ("وقف الخسارة", f"{data.get('stop_loss', '')} ريال", RED),
-    ("الزخم", data.get("momentum", ""), WHITE),
+    ("📍 السعر الحالي", f"{data['price']} ريال", WHITE),
+    ("🎯 نقطة الدخول", f"{data['entry']} ريال", GOLD),
+    ("🎯 الهدف الأول", f"{data['target1']} ريال", GREEN),
+    ("🎯 الهدف الثاني", f"{data['target2']} ريال", GREEN),
+    ("🛑 وقف الخسارة", f"{data['stop_loss']} ريال", RED),
+    ("📊 الزخم", data["momentum"], WHITE),
 ]
 
 y = 500
 
 for label, value, color in rows:
-    draw.rounded_rectangle(
-        (175, y - 31, 905, y + 31),
-        radius=17,
-        fill=ROW,
-        outline="#1F2937",
-        width=1
-    )
+    draw.rounded_rectangle((175, y - 31, 905, y + 31), radius=17, fill=ROW, outline="#1F2937", width=1)
 
-    text_center(540, y, f"{label}: {value}", font_row, color)
+    text_right(880, y, f"{label}: {value}", font_row, color)
+
     y += 64
 
 
-# Note box
-draw.rounded_rectangle(
-    (120, 800, 960, 890),
-    radius=26,
-    fill="#0B0F19",
-    outline=BORDER,
-    width=2
-)
-
+# Note (Wrapped)
 note = data.get("note", "")
-text_center(540, 845, note, font_note, GRAY)
+wrapped = textwrap.fill(note, width=32)
+
+draw.rounded_rectangle((120, 800, 960, 900), radius=26, fill="#0B0F19", outline=BORDER, width=2)
+
+text_right(920, 845, wrapped, font_note, GRAY)
 
 
 # Footer
-text_center(
-    540,
-    935,
-    "محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية",
-    font_footer,
-    GRAY
-)
+text_right(920, 940, "محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية", font_footer, GRAY)
 
-draw.text(
-    (540, 985),
-    "t.me/TASI_Smart",
-    fill="#64748B",
-    font=font_footer,
-    anchor="mm"
-)
+draw.text((540, 985), "t.me/TASI_Smart", fill="#64748B", font=font_footer, anchor="mm")
 
 
 # Save
 img.save("output.png", quality=95)
-print("Premium Arabic post generated successfully.")
+
+print("PROFESSIONAL TRADING POST READY 🚀")
