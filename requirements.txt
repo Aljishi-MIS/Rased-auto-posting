@@ -1,0 +1,4 @@
+pillow
+requests
+arabic-reshaper
+python-bidi
