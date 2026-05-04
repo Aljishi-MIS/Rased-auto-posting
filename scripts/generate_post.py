@@ -5,7 +5,9 @@ from bidi.algorithm import get_display
 
 # دالة لمعالجة العربية
 def ar(text):
-    reshaped = arabic_reshaper.reshape(text)
+    if not text:
+        return ""
+    reshaped = arabic_reshaper.reshape(str(text))
     return get_display(reshaped)
 
 # تحميل البيانات
