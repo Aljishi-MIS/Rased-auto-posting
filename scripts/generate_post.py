@@ -1,88 +1,143 @@
 import json
-from PIL import Image, ImageDraw, ImageFont
-import arabic_reshaper
-from bidi.algorithm import get_display
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 
-def ar(text):
-    if not text:
-        return ""
-    reshaped = arabic_reshaper.reshape(str(text))
-    return get_display(reshaped)
-
-
-# تحميل البيانات
+# Load data
 with open("data/daily.json", "r", encoding="utf-8") as f:
     data = json.load(f)
 
 
-# إعداد الصورة
+# Canvas
 W, H = 1080, 1080
-img = Image.new("RGB", (W, H), "#0D1117")
+BG = "#0D1117"
+CARD = "#111827"
+ROW = "#0F172A"
+GOLD = "#F0B429"
+GREEN = "#22C55E"
+RED = "#EF4444"
+WHITE = "#FFFFFF"
+GRAY = "#A3AAB8"
+BORDER = "#334155"
+
+img = Image.new("RGB", (W, H), BG)
 draw = ImageDraw.Draw(img)
 
 
-# 🔥 الخط الجديد (مهم)
+# Fonts
 font_path = "assets/Cairo-Bold.ttf"
 
-font_brand = ImageFont.truetype(font_path, 70)
-font_sub = ImageFont.truetype(font_path, 34)
-font_stock = ImageFont.truetype(font_path, 60)
-font_text = ImageFont.truetype(font_path, 44)
-font_note = ImageFont.truetype(font_path, 32)
+font_brand = ImageFont.truetype(font_path, 76)
+font_sub = ImageFont.truetype(font_path, 32)
+font_stock = ImageFont.truetype(font_path, 58)
+font_row = ImageFont.truetype(font_path, 42)
+font_note = ImageFont.truetype(font_path, 30)
 font_footer = ImageFont.truetype(font_path, 26)
 
 
-# الألوان
-gold = "#F0B429"
-green = "#22C55E"
-red = "#EF4444"
-white = "#FFFFFF"
-gray = "#94A3B8"
+def text_center(x, y, text, font, color):
+    draw.text(
+        (x, y),
+        str(text),
+        fill=color,
+        font=font,
+        anchor="mm",
+        direction="rtl",
+        language="ar"
+    )
+
+
+def paste_logo():
+    try:
+        logo = Image.open("assets/logo.png").convert("RGBA")
+        logo = logo.resize((118, 118))
+
+        mask = Image.new("L", (118, 118), 0)
+        md = ImageDraw.Draw(mask)
+        md.ellipse((0, 0, 118, 118), fill=255)
+
+        img.paste(logo, (481, 88), mask)
+    except Exception:
+        pass
+
+
+# Background glow
+glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+gd = ImageDraw.Draw(glow)
+gd.ellipse((280, -160, 800, 340), fill=(240, 180, 41, 35))
+glow = glow.filter(ImageFilter.GaussianBlur(70))
+img = Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB")
+draw = ImageDraw.Draw(img)
+
+
+# Main card
+draw.rounded_rectangle(
+    (65, 65, 1015, 1015),
+    radius=44,
+    fill=CARD,
+    outline=BORDER,
+    width=3
+)
+
+paste_logo()
+draw = ImageDraw.Draw(img)
 
 
 # Header
-draw.text((540, 150), ar(data["brand"]), fill=gold, font=font_brand, anchor="mm")
-draw.text((540, 210), ar("تحليل فني لسوق الأسهم السعودي"), fill=white, font=font_sub, anchor="mm")
+text_center(540, 245, "مضارب", font_brand, GOLD)
+text_center(540, 305, "تحليل فني وتعليمي لسوق الأسهم السعودية", font_sub, WHITE)
 
-draw.line((200, 260, 880, 260), fill=gold, width=3)
+draw.line((190, 365, 890, 365), fill=GOLD, width=4)
 
 
-# Stock
-stock = ar(data["stock_name"])
-symbol = data["symbol"]
-
-draw.text((540, 330), ar(f"{stock} - {symbol}"), fill=white, font=font_stock, anchor="mm")
+# Stock title
+stock_name = data.get("stock_name", "")
+symbol = data.get("symbol", "")
+text_center(540, 435, f"{stock_name} - {symbol}", font_stock, WHITE)
 
 
 # Rows
-y = 430
-
 rows = [
-    ("السعر الحالي", data["price"], white),
-    ("نقطة الدخول", data["entry"], gold),
-    ("الهدف الأول", data["target1"], green),
-    ("الهدف الثاني", data["target2"], green),
-    ("وقف الخسارة", data["stop_loss"], red),
-    ("الزخم", data["momentum"], white),
+    ("السعر الحالي", f"{data.get('price', '')} ريال", WHITE),
+    ("نقطة الدخول", f"{data.get('entry', '')} ريال", GOLD),
+    ("الهدف الأول", f"{data.get('target1', '')} ريال", GREEN),
+    ("الهدف الثاني", f"{data.get('target2', '')} ريال", GREEN),
+    ("وقف الخسارة", f"{data.get('stop_loss', '')} ريال", RED),
+    ("الزخم", data.get("momentum", ""), WHITE),
 ]
 
+y = 525
+
 for label, value, color in rows:
-    text = ar(f"{label} : {value} ريال")
-    draw.text((540, y), text, fill=color, font=font_text, anchor="mm")
-    y += 65
+    draw.rounded_rectangle(
+        (175, y - 34, 905, y + 34),
+        radius=18,
+        fill=ROW,
+        outline="#1F2937",
+        width=1
+    )
+
+    text_center(540, y, f"{label}: {value}", font_row, color)
+    y += 72
 
 
-# Note
-note = ar(data["note"])
-draw.text((540, 850), note, fill=gray, font=font_note, anchor="mm")
+# Note box
+draw.rounded_rectangle(
+    (120, 830, 960, 920),
+    radius=26,
+    fill="#0B0F19",
+    outline=BORDER,
+    width=2
+)
+
+note = data.get("note", "")
+text_center(540, 875, note, font_note, GRAY)
 
 
 # Footer
-footer = ar("⚠️ محتوى تعليمي فقط — ليس توصية استثمارية")
-draw.text((540, 950), footer, fill=gray, font=font_footer, anchor="mm")
+text_center(540, 952, "محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية", font_footer, GRAY)
+draw.text((540, 1000), "t.me/TASI_Smart", fill="#64748B", font=font_footer, anchor="mm")
 
 
-# حفظ
-img.save("output.png")
-print("FINAL CLEAN OUTPUT READY")
+# Save
+img.save("output.png", quality=95)
+print("Premium Arabic post generated successfully.")
