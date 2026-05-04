@@ -29,11 +29,23 @@ draw = ImageDraw.Draw(img)
 font_path = "assets/Cairo-Bold.ttf"
 
 font_brand = ImageFont.truetype(font_path, 76)
-font_sub = ImageFont.truetype(font_path, 32)
-font_stock = ImageFont.truetype(font_path, 58)
-font_row = ImageFont.truetype(font_path, 42)
+font_sub = ImageFont.truetype(font_path, 30)
+font_stock = ImageFont.truetype(font_path, 56)
+font_row = ImageFont.truetype(font_path, 36)
 font_note = ImageFont.truetype(font_path, 30)
 font_footer = ImageFont.truetype(font_path, 25)
+
+
+def text_center(x, y, text, font, color):
+    draw.text(
+        (x, y),
+        str(text),
+        fill=color,
+        font=font,
+        anchor="mm",
+        direction="rtl",
+        language="ar"
+    )
 
 
 def text_right(x, y, text, font, color):
@@ -70,58 +82,87 @@ draw = ImageDraw.Draw(img)
 
 
 # Card
-draw.rounded_rectangle((65, 65, 1015, 1015), radius=44, fill=CARD, outline=BORDER, width=3)
+draw.rounded_rectangle(
+    (65, 65, 1015, 1015),
+    radius=44,
+    fill=CARD,
+    outline=BORDER,
+    width=3
+)
 
 paste_logo()
 
 
 # Header
-draw.text((540, 245), "مضارب", fill=GOLD, font=font_brand, anchor="mm", direction="rtl")
-draw.text((540, 305), "تحليل فني وتعليمي لسوق الأسهم السعودية", fill=WHITE, font=font_sub, anchor="mm", direction="rtl")
+text_center(540, 245, "مضارب", font_brand, GOLD)
 
-draw.line((190, 365, 890, 365), fill=GOLD, width=4)
+# مسافة أكبر بين مضارب والوصف
+text_center(540, 325, "تحليل فني وتعليمي لسوق الأسهم السعودية", font_sub, WHITE)
+
+draw.line((190, 380, 890, 380), fill=GOLD, width=4)
 
 
 # Stock
-text_right(900, 430, f"{data['stock_name']} - {data['symbol']}", font_stock, WHITE)
+text_right(900, 445, f"{data['stock_name']} - {data['symbol']}", font_stock, WHITE)
 
 
 # Rows
 rows = [
-    ("📍 السعر الحالي", f"{data['price']} ريال", WHITE),
-    ("🎯 نقطة الدخول", f"{data['entry']} ريال", GOLD),
-    ("🎯 الهدف الأول", f"{data['target1']} ريال", GREEN),
-    ("🎯 الهدف الثاني", f"{data['target2']} ريال", GREEN),
-    ("🛑 وقف الخسارة", f"{data['stop_loss']} ريال", RED),
-    ("📊 الزخم", data["momentum"], WHITE),
+    ("السعر الحالي", f"{data.get('price', '')} ريال", WHITE),
+    ("نقطة الدخول", f"{data.get('entry', '')} ريال", GOLD),
+    ("الهدف الأول", f"{data.get('target1', '')} ريال", GREEN),
+    ("الهدف الثاني", f"{data.get('target2', '')} ريال", GREEN),
+    ("وقف الخسارة", f"{data.get('stop_loss', '')} ريال", RED),
 ]
 
-y = 500
+y = 515
 
 for label, value, color in rows:
-    draw.rounded_rectangle((175, y - 31, 905, y + 31), radius=17, fill=ROW, outline="#1F2937", width=1)
+    draw.rounded_rectangle(
+        (175, y - 28, 905, y + 28),
+        radius=16,
+        fill=ROW,
+        outline="#1F2937",
+        width=1
+    )
 
     text_right(880, y, f"{label}: {value}", font_row, color)
+    y += 60
 
-    y += 64
 
-
-# Note (Wrapped)
+# Note
 note = data.get("note", "")
-wrapped = textwrap.fill(note, width=32)
+wrapped_note = textwrap.fill(note, width=30)
 
-draw.rounded_rectangle((120, 800, 960, 900), radius=26, fill="#0B0F19", outline=BORDER, width=2)
+draw.rounded_rectangle(
+    (120, 795, 960, 895),
+    radius=26,
+    fill="#0B0F19",
+    outline=BORDER,
+    width=2
+)
 
-text_right(920, 845, wrapped, font_note, GRAY)
+text_center(540, 845, wrapped_note, font_note, GRAY)
 
 
 # Footer
-text_right(920, 940, "محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية", font_footer, GRAY)
+text_center(
+    540,
+    940,
+    "محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية",
+    font_footer,
+    GRAY
+)
 
-draw.text((540, 985), "t.me/TASI_Smart", fill="#64748B", font=font_footer, anchor="mm")
+draw.text(
+    (540, 985),
+    "t.me/TASI_Smart",
+    fill="#64748B",
+    font=font_footer,
+    anchor="mm"
+)
 
 
 # Save
 img.save("output.png", quality=95)
-
-print("PROFESSIONAL TRADING POST READY 🚀")
+print("Premium Arabic post generated successfully.")
