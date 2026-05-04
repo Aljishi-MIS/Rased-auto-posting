@@ -27,3 +27,9 @@ jobs:
         with:
           name: modareb-post
           path: output.png
+
+      - name: Post to Telegram
+        run: python scripts/post_to_telegram.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
