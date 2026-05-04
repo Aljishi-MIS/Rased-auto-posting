@@ -1,0 +1,29 @@
+name: Generate Modareb Post
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install requirements
+        run: pip install -r requirements.txt
+
+      - name: Generate post image
+        run: python scripts/generate_post.py
+
+      - name: Upload generated image
+        uses: actions/upload-artifact@v4
+        with:
+          name: modareb-post
+          path: output.png
