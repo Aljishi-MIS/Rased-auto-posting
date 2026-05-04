@@ -1,14 +1,12 @@
 import json
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
-from bidi.algorithm import get_display
 
 
 def ar(text):
     if not text:
         return ""
-    reshaped = arabic_reshaper.reshape(str(text))
-    return get_display(reshaped)
+    return arabic_reshaper.reshape(str(text))
 
 
 # تحميل البيانات
@@ -61,11 +59,11 @@ draw.text((540, 220), ar("تحليل الأسهم السعودية"), fill=white
 draw.line((200, 280, 880, 280), fill=gold, width=3)
 
 
-# اسم السهم (مهم: فصل العربي عن الرقم)
+# اسم السهم (بدون bidi)
 stock_name = ar(data["stock_name"])
 symbol = data["symbol"]
 
-draw.text((540, 350), f"{symbol} — {stock_name}", fill=white, font=font_stock, anchor="mm")
+draw.text((540, 350), f"{stock_name} - {symbol}", fill=white, font=font_stock, anchor="mm")
 
 
 # البيانات
@@ -84,11 +82,10 @@ rows = [
 for label, value, color in rows:
     label_ar = ar(label)
 
-    # إذا رقم → أضف ريال
     if str(value).replace(".", "").isdigit():
-        text = f"{value} ريال :{label_ar}"
+        text = f"{label_ar} : {value} ريال"
     else:
-        text = f"{value} :{label_ar}"
+        text = f"{label_ar} : {value}"
 
     draw.text((540, y), text, fill=color, font=font_text, anchor="mm")
     y += 70
@@ -115,4 +112,4 @@ draw.text((540, 960), footer, fill=gray, font=font_footer, anchor="mm")
 # حفظ الصورة
 img.save("output.png", quality=95)
 
-print("Final professional Arabic post generated successfully!")
+print("Final clean Arabic post generated successfully.")
