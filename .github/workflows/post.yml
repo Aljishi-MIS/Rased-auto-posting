@@ -3,34 +3,34 @@ name: Modareb Auto Pipeline
 on:
   workflow_dispatch:
   schedule:
-    # ⏰ تشغيل يومي (9:30 صباحاً بتوقيت السعودية = 6:30 UTC)
+    # البوست اليومي — 9:30 صباحاً السعودية
     - cron: "30 6 * * 0-4"
 
+    # التقرير الأسبوعي — الخميس 4:30 مساءً السعودية
+    - cron: "30 13 * * 4"
+
 jobs:
-  run-pipeline:
+  daily-post:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 6 * * 0-4'
     runs-on: ubuntu-latest
 
     permissions:
       contents: write
 
     steps:
-      # 1) تحميل المشروع
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2) إعداد بايثون
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 3) تثبيت المكتبات
       - name: Install requirements
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4) جلب البيانات من API
       - name: Fetch market data
         run: |
           if [ -f scripts/fetch_api_data.py ]; then
@@ -42,24 +42,20 @@ jobs:
           API_URL: ${{ secrets.API_URL }}
           API_KEY: ${{ secrets.API_KEY }}
 
-      # 5) توليد البوست
       - name: Generate post image
         run: python scripts/generate_post.py
 
-      # 6) تسجيل الإشارة
       - name: Log signal
         run: python scripts/log_signal.py
 
-      # 7) حفظ سجل الإشارات في GitHub
       - name: Commit signal log
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add data/signals_log.csv
-          git commit -m "Update signals log" || echo "No changes to commit"
+          git add data/signals_log.csv data/daily.json
+          git commit -m "Update daily signal log" || echo "No changes to commit"
           git push
 
-      # 8) النشر في Telegram
       - name: Post to Telegram
         run: |
           if [ -f scripts/post_to_telegram.py ]; then
@@ -71,9 +67,46 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      # 9) حفظ الصورة كملف قابل للتحميل
       - name: Upload post image
         uses: actions/upload-artifact@v4
         with:
           name: modareb-post
           path: output.png
+
+  weekly-dashboard:
+    if: github.event.schedule == '30 13 * * 4'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install requirements
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate weekly report
+        run: python scripts/weekly_report.py
+
+      - name: Commit weekly report
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add data/weekly_report.txt
+          git commit -m "Update weekly report" || echo "No changes to commit"
+          git push
+
+      - name: Post dashboard to Telegram
+        run: python scripts/post_dashboard_to_telegram.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
