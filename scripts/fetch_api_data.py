@@ -5,16 +5,29 @@ import json
 API_URL = os.environ.get("API_URL")
 API_KEY = os.environ.get("API_KEY")
 
-headers = {
-    "Authorization": f"Bearer {API_KEY}"
-}
+try:
+    headers = {
+        "Authorization": f"Bearer {API_KEY}"
+    }
 
-response = requests.get(API_URL, headers=headers)
+    response = requests.get(API_URL, headers=headers, timeout=10)
+    response.raise_for_status()
 
-data = response.json()
+    data = response.json()
+    stock = data[0]
 
-# 👇 اختر أفضل سهم (مؤقت)
-stock = data[0]
+    print("API loaded successfully")
+
+except Exception as e:
+    print("API FAILED → using fallback data")
+    print(e)
+
+    # 🔥 بيانات احتياطية (مهمة جداً)
+    stock = {
+        "name": "أكوا باور",
+        "symbol": "2082",
+        "price": 235.40
+    }
 
 daily_data = {
     "brand": "مضارب",
@@ -32,4 +45,4 @@ daily_data = {
 with open("data/daily.json", "w", encoding="utf-8") as f:
     json.dump(daily_data, f, ensure_ascii=False, indent=2)
 
-print("API data loaded successfully.")
+print("Daily JSON updated")
