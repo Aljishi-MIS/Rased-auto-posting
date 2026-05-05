@@ -30,8 +30,8 @@ font_stock = ImageFont.truetype(font_path, 58)
 font_label = ImageFont.truetype(font_path, 30)
 font_value = ImageFont.truetype(font_path, 32)
 
-font_note = ImageFont.truetype(font_path, 21)   # صغّرنا قراءة فنية
-font_footer = ImageFont.truetype(font_path, 24)
+font_note = ImageFont.truetype(font_path, 16)   # صغّرنا قراءة فنية
+font_footer = ImageFont.truetype(font_path, 18)
 font_link = ImageFont.truetype(font_path, 26)
 
 
