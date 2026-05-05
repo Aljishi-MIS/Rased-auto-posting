@@ -1,78 +1,77 @@
-name: Generate Modareb Post
+name: Modareb Auto Pipeline
 
 on:
   workflow_dispatch:
+  schedule:
+    # ⏰ تشغيل تلقائي (اختياري) — يومياً الساعة 6:30 صباحاً بتوقيت UTC
+    # (9:30 صباحاً السعودية)
+    - cron: "30 6 * * 0-4"
 
 jobs:
-  generate:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install requirements
-        run: pip install -r requirements.txt
-
-      - name: Generate post image
-        run: python scripts/generate_post.py
-
-      - name: Upload generated image
-        uses: actions/upload-artifact@v4
-        with:
-          name: modareb-post
-          path: output.png
-
-      - name: Post to Telegram
-        run: python scripts/post_to_telegram.py
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-        name: Generate Modareb Post
-
-on:
-  workflow_dispatch:
-
-jobs:
-  generate:
+  generate-and-post:
     runs-on: ubuntu-latest
 
     permissions:
       contents: write
 
     steps:
+      # 1) تحميل المشروع
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2) إعداد بايثون
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # 3) تثبيت المكتبات
       - name: Install requirements
-        run: pip install -r requirements.txt
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
 
+      # 4) (اختياري) جلب البيانات من API
+      # إذا عندك سكربت fetch_api_data.py فعّله
+      - name: Fetch market data
+        run: |
+          if [ -f scripts/fetch_api_data.py ]; then
+            python scripts/fetch_api_data.py
+          else
+            echo "No API fetch script found, skipping..."
+          fi
+
+      # 5) توليد البوست
       - name: Generate post image
         run: python scripts/generate_post.py
 
+      # 6) تسجيل الإشارة
       - name: Log signal
         run: python scripts/log_signal.py
 
+      # 7) حفظ سجل الإشارات في GitHub
       - name: Commit signal log
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add data/signals_log.csv
-          git commit -m "Log new signal" || echo "No changes to commit"
+          git commit -m "Update signals log" || echo "No changes"
           git push
 
-      - name: Upload generated image
+      # 8) إرسال إلى Telegram (إذا مفعل)
+      - name: Post to Telegram
+        run: |
+          if [ -f scripts/post_to_telegram.py ]; then
+            python scripts/post_to_telegram.py
+          else
+            echo "Telegram script not found, skipping..."
+          fi
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      # 9) حفظ الصورة كملف قابل للتحميل
+      - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
           name: modareb-post
