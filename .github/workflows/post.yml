@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 7 * * 0-4"  # 10 صباحاً KSA
+    - cron: "*/5 7-12 * * 0-4"  # كل 5 دقائق وقت السوق
 
 jobs:
   daily-post:
