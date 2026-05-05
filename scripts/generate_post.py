@@ -31,8 +31,7 @@ font_stock = ImageFont.truetype(font_path, 58)
 font_label = ImageFont.truetype(font_path, 30)
 font_value = ImageFont.truetype(font_path, 32)
 
-# تم التصغير هنا
-font_note = ImageFont.truetype(font_path, 19)
+font_note = ImageFont.truetype(font_path, 16)
 font_footer = ImageFont.truetype(font_path, 21)
 font_link = ImageFont.truetype(font_path, 25)
 
