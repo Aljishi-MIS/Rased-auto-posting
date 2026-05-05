@@ -16,6 +16,7 @@ GREEN = "#22C55E"
 RED = "#EF4444"
 WHITE = "#FFFFFF"
 BORDER = "#D99A00"
+MUTED = "#CBD5E1"
 
 img = Image.new("RGB", (W, H), BG)
 draw = ImageDraw.Draw(img)
@@ -30,9 +31,10 @@ font_stock = ImageFont.truetype(font_path, 58)
 font_label = ImageFont.truetype(font_path, 30)
 font_value = ImageFont.truetype(font_path, 32)
 
-font_note = ImageFont.truetype(font_path, 16)   # صغّرنا قراءة فنية
-font_footer = ImageFont.truetype(font_path, 18)
-font_link = ImageFont.truetype(font_path, 26)
+# تم التصغير هنا
+font_note = ImageFont.truetype(font_path, 19)
+font_footer = ImageFont.truetype(font_path, 21)
+font_link = ImageFont.truetype(font_path, 25)
 
 
 def text_center(x, y, text, font, color):
@@ -142,16 +144,18 @@ draw.ellipse((532, 331, 548, 347), fill=GOLD)
 
 
 # Stock
-text_center(540, 395, f"{data['stock_name']} - {data['symbol']}", font_stock, WHITE)
+stock_name = data.get("stock_name", "")
+symbol = data.get("symbol", "")
+text_center(540, 395, f"{stock_name} - {symbol}", font_stock, WHITE)
 
 
-# Rows with icons
+# Rows
 rows = [
-    ("السعر الحالي", data["price"], WHITE, "price"),
-    ("نقطة الدخول", data["entry"], GOLD, "target"),
-    ("الهدف الأول", data["target1"], GREEN, "target"),
-    ("الهدف الثاني", data["target2"], GREEN, "target"),
-    ("وقف الخسارة", data["stop_loss"], RED, "stop"),
+    ("السعر الحالي", data.get("price", ""), WHITE, "price"),
+    ("نقطة الدخول", data.get("entry", ""), GOLD, "target"),
+    ("الهدف الأول", data.get("target1", ""), GREEN, "target"),
+    ("الهدف الثاني", data.get("target2", ""), GREEN, "target"),
+    ("وقف الخسارة", data.get("stop_loss", ""), RED, "stop"),
 ]
 
 y = 480
@@ -166,8 +170,7 @@ for label, value, color, icon in rows:
     )
 
     draw_icon(835, y, icon, color)
-
-    text_right(760, y, f"{label}:", font_label, color if color != WHITE else WHITE)
+    text_right(760, y, f"{label}:", font_label, color)
     text_left(300, y, f"{value} ريال", font_value, color)
 
     y += 72
@@ -182,10 +185,15 @@ draw.rounded_rectangle(
     width=3,
 )
 
+note = data.get(
+    "note",
+    "قراءة فنية تعليمية لسهم قريب من منطقة مقاومة مع متابعة السيولة."
+)
+
 text_center(
     540,
     885,
-    data.get("note", "قراءة فنية تعليمية لسهم قريب من منطقة مقاومة مع متابعة السيولة."),
+    note,
     font_note,
     WHITE,
 )
@@ -200,7 +208,7 @@ text_center(
     985,
     "محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية",
     font_footer,
-    WHITE,
+    MUTED,
 )
 
 draw.rounded_rectangle(
@@ -215,4 +223,4 @@ text_center(540, 1032, "t.me/TASI_Smart", font_link, GOLD)
 
 
 img.save("output.png", quality=95)
-print("Final Modareb post with icons generated successfully.")
+print("Final Modareb post generated successfully.")
