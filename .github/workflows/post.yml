@@ -33,3 +33,47 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+        name: Generate Modareb Post
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install requirements
+        run: pip install -r requirements.txt
+
+      - name: Generate post image
+        run: python scripts/generate_post.py
+
+      - name: Log signal
+        run: python scripts/log_signal.py
+
+      - name: Commit signal log
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add data/signals_log.csv
+          git commit -m "Log new signal" || echo "No changes to commit"
+          git push
+
+      - name: Upload generated image
+        uses: actions/upload-artifact@v4
+        with:
+          name: modareb-post
+          path: output.png
