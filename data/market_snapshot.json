@@ -1,0 +1,62 @@
+[
+  {
+    "name": "أكوا باور",
+    "symbol": "2082",
+    "price": 235.40,
+    "high": 238.00,
+    "low": 231.00,
+    "volume": 1200000,
+    "avg_volume": 600000,
+    "change_percent": 2.4,
+    "resistance": 238.00,
+    "support": 231.00
+  },
+  {
+    "name": "البحري",
+    "symbol": "4030",
+    "price": 31.90,
+    "high": 32.10,
+    "low": 30.80,
+    "volume": 4500000,
+    "avg_volume": 1800000,
+    "change_percent": 3.1,
+    "resistance": 32.20,
+    "support": 30.70
+  },
+  {
+    "name": "أديس",
+    "symbol": "2382",
+    "price": 19.34,
+    "high": 19.60,
+    "low": 18.90,
+    "volume": 6200000,
+    "avg_volume": 2500000,
+    "change_percent": 2.8,
+    "resistance": 19.65,
+    "support": 18.85
+  },
+  {
+    "name": "سلوشنز",
+    "symbol": "7202",
+    "price": 312.80,
+    "high": 315.00,
+    "low": 306.00,
+    "volume": 850000,
+    "avg_volume": 500000,
+    "change_percent": 1.7,
+    "resistance": 316.00,
+    "support": 306.00
+  },
+  {
+    "name": "الراجحي",
+    "symbol": "1120",
+    "price": 95.20,
+    "high": 95.80,
+    "low": 93.70,
+    "volume": 3900000,
+    "avg_volume": 3500000,
+    "change_percent": 1.1,
+    "resistance": 96.00,
+    "support": 93.50
+  }
+]
