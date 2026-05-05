@@ -3,12 +3,11 @@ name: Modareb Auto Pipeline
 on:
   workflow_dispatch:
   schedule:
-    # ⏰ تشغيل تلقائي (اختياري) — يومياً الساعة 6:30 صباحاً بتوقيت UTC
-    # (9:30 صباحاً السعودية)
+    # ⏰ تشغيل يومي (9:30 صباحاً بتوقيت السعودية = 6:30 UTC)
     - cron: "30 6 * * 0-4"
 
 jobs:
-  generate-and-post:
+  run-pipeline:
     runs-on: ubuntu-latest
 
     permissions:
@@ -31,15 +30,17 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4) (اختياري) جلب البيانات من API
-      # إذا عندك سكربت fetch_api_data.py فعّله
+      # 4) جلب البيانات من API
       - name: Fetch market data
         run: |
           if [ -f scripts/fetch_api_data.py ]; then
             python scripts/fetch_api_data.py
           else
-            echo "No API fetch script found, skipping..."
+            echo "No API script found, skipping..."
           fi
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          API_KEY: ${{ secrets.API_KEY }}
 
       # 5) توليد البوست
       - name: Generate post image
@@ -55,10 +56,10 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add data/signals_log.csv
-          git commit -m "Update signals log" || echo "No changes"
+          git commit -m "Update signals log" || echo "No changes to commit"
           git push
 
-      # 8) إرسال إلى Telegram (إذا مفعل)
+      # 8) النشر في Telegram
       - name: Post to Telegram
         run: |
           if [ -f scripts/post_to_telegram.py ]; then
@@ -71,7 +72,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       # 9) حفظ الصورة كملف قابل للتحميل
-      - name: Upload image artifact
+      - name: Upload post image
         uses: actions/upload-artifact@v4
         with:
           name: modareb-post
