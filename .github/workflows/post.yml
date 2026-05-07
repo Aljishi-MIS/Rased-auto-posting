@@ -1,114 +1,53 @@
-name: Modareb Auto Pipeline
+name: TASI Auto Post
 
 on:
   workflow_dispatch:
 
   schedule:
-    # بوست يومي 10 صباحاً (السوق)
     - cron: "0 7 * * 0-4"
-
-    # LIVE Scanner كل 5 دقائق
-    - cron: "*/5 7-12 * * 0-4"
+    - cron: "0 9 * * 0-4"
+    - cron: "0 11 * * 0-4"
 
 jobs:
-
-  # =========================
-  # 📊 DAILY POST
-  # =========================
-  daily-post:
-    if: github.event.schedule == '0 7 * * 0-4' || github.event_name == 'workflow_dispatch'
+  post:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install requirements
-        run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Fetch market data
-        env:
-          API_URL: ${{ secrets.API_URL }}
-          API_KEY: ${{ secrets.API_KEY }}
-        run: python scripts/fetch_api_data.py
-
-      - name: Generate post image
-        run: python scripts/generate_post.py
-
-      - name: Log signal
-        run: python scripts/log_signal.py
+      - name: Generate Signal Image
+        run: |
+          python scripts/generate_post.py
 
       - name: Send to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python scripts/post_to_telegram.py
+        run: |
+          python scripts/post_to_telegram.py
 
-      - name: Upload image
-        uses: actions/upload-artifact@v4
-        with:
-          name: modareb-post
-          path: output.png
-
-
-  # =========================
-  # ⚡ LIVE SCANNER
-  # =========================
-  live-scan:
-    if: github.event.schedule == '*/5 7-12 * * 0-4'
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - run: pip install -r requirements.txt
-
-      - name: Fetch market data
+      - name: Post to Facebook
         env:
-          API_URL: ${{ secrets.API_URL }}
-          API_KEY: ${{ secrets.API_KEY }}
-        run: python scripts/fetch_api_data.py
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+        run: |
+          python scripts/post_to_facebook.py
 
-      - name: Run live scanner
-        run: python scripts/live_scanner.py
-
-      - name: Send live alert
+      - name: Post to Instagram
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python scripts/send_live_alert.py
-
-
-  # =========================
-  # 📈 WEEKLY REPORT
-  # =========================
-  weekly-dashboard:
-    if: github.event.schedule == '0 7 * * 4'
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - run: pip install -r requirements.txt
-
-      - name: Generate weekly report
-        run: python scripts/weekly_report.py
-
-      - name: Send dashboard
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python scripts/post_dashboard_to_telegram.py
+          IG_APP_ID: ${{ secrets.IG_APP_ID }}
+          IG_APP_SECRET: ${{ secrets.IG_APP_SECRET }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+        run: |
+          python scripts/post_to_instagram.py
