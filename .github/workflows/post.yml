@@ -1,4 +1,4 @@
-name: TASI Auto Post
+name: TASI AI Auto Posting
 
 on:
   workflow_dispatch:
@@ -9,26 +9,33 @@ on:
     - cron: "0 11 * * 0-4"
 
 jobs:
-  post:
+  auto-post:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install Requirements
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Generate Signal Image
+      - name: Generate AI Post
         run: |
           python scripts/generate_post.py
+
+      - name: Upload output.png to GitHub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python scripts/upload_output.py
 
       - name: Send to Telegram
         env:
@@ -46,8 +53,7 @@ jobs:
 
       - name: Post to Instagram
         env:
-          IG_APP_ID: ${{ secrets.IG_APP_ID }}
-          IG_APP_SECRET: ${{ secrets.IG_APP_SECRET }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          IMAGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/main/output.png
         run: |
           python scripts/post_to_instagram.py
