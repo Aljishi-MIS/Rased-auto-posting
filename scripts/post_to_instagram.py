@@ -1,77 +1,45 @@
 import os
-import json
-import time
 import requests
+import time
 
-GRAPH_URL = "https://graph.facebook.com/v22.0"
-
-IG_USER_ID = os.getenv("IG_USER_ID")
-IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN")
+FB_PAGE_ID = os.getenv("FB_PAGE_ID")
+FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN")
 IMAGE_URL = os.getenv("IMAGE_URL")
+CAPTION = os.getenv("CAPTION", "TASI AI Signals")
 
-DATA_PATH = "data/daily.json"
-
-
-def load_daily_data():
-    with open(DATA_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+GRAPH_URL = "https://graph.facebook.com/v25.0"
 
 
-def build_caption(data):
-    stock_name = data.get("stock_name", "")
-    symbol = data.get("symbol", "")
-    price = data.get("price", "")
-    entry = data.get("entry", "")
-    target1 = data.get("target1", "")
-    target2 = data.get("target2", "")
-    stop_loss = data.get("stop_loss", "")
-    momentum = data.get("momentum", "قوي")
-    note = data.get("note", "قراءة فنية تعليمية مبنية على الزخم والسيولة.")
+def get_instagram_business_id():
+    url = f"{GRAPH_URL}/{FB_PAGE_ID}"
+    params = {
+        "fields": "instagram_business_account",
+        "access_token": FB_PAGE_TOKEN
+    }
 
-    return f"""🚀 إشارة مضارب اليومية
-
-📊 {stock_name} - {symbol}
-
-💰 السعر الحالي: {price} ريال
-🎯 نقطة الدخول: {entry} ريال
-
-🟢 الهدف الأول: {target1} ريال
-🟢 الهدف الثاني: {target2} ريال
-
-🔴 وقف الخسارة: {stop_loss} ريال
-
-⚡ الزخم: {momentum}
-
-📌 قراءة فنية:
-{note}
-
-⚠️ محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية
-
-#تاسي #السوق_السعودي #أسهم #مضارب
-"""
-
-
-def create_media_container(caption):
-    if not IG_USER_ID:
-        raise ValueError("Missing IG_USER_ID secret")
-
-    if not IG_ACCESS_TOKEN:
-        raise ValueError("Missing IG_ACCESS_TOKEN secret")
-
-    if not IMAGE_URL:
-        raise ValueError("Missing IMAGE_URL environment variable")
-
-    response = requests.post(
-        f"{GRAPH_URL}/{IG_USER_ID}/media",
-        data={
-            "image_url": IMAGE_URL,
-            "caption": caption,
-            "access_token": IG_ACCESS_TOKEN,
-        },
-        timeout=60,
-    )
-
+    response = requests.get(url, params=params)
     result = response.json()
+
+    print("Instagram account response:", result)
+
+    if "instagram_business_account" not in result:
+        raise RuntimeError(f"No Instagram business account linked: {result}")
+
+    return result["instagram_business_account"]["id"]
+
+
+def create_media_container(ig_user_id):
+    url = f"{GRAPH_URL}/{ig_user_id}/media"
+
+    payload = {
+        "image_url": IMAGE_URL,
+        "caption": CAPTION,
+        "access_token": FB_PAGE_TOKEN
+    }
+
+    response = requests.post(url, data=payload)
+    result = response.json()
+
     print("Instagram create media response:", result)
 
     if "id" not in result:
@@ -80,17 +48,17 @@ def create_media_container(caption):
     return result["id"]
 
 
-def publish_media(creation_id):
-    response = requests.post(
-        f"{GRAPH_URL}/{IG_USER_ID}/media_publish",
-        data={
-            "creation_id": creation_id,
-            "access_token": IG_ACCESS_TOKEN,
-        },
-        timeout=60,
-    )
+def publish_container(ig_user_id, creation_id):
+    url = f"{GRAPH_URL}/{ig_user_id}/media_publish"
 
+    payload = {
+        "creation_id": creation_id,
+        "access_token": FB_PAGE_TOKEN
+    }
+
+    response = requests.post(url, data=payload)
     result = response.json()
+
     print("Instagram publish response:", result)
 
     if "id" not in result:
@@ -100,18 +68,19 @@ def publish_media(creation_id):
 
 
 def main():
-    data = load_daily_data()
-    caption = build_caption(data)
+    ig_user_id = get_instagram_business_id()
 
-    print("Creating Instagram media container...")
-    creation_id = create_media_container(caption)
+    print("Instagram User ID:", ig_user_id)
+
+    creation_id = create_media_container(ig_user_id)
+
+    print("Creation ID:", creation_id)
 
     time.sleep(10)
 
-    print("Publishing Instagram media...")
-    media_id = publish_media(creation_id)
+    publish_id = publish_container(ig_user_id, creation_id)
 
-    print(f"Instagram post published successfully: {media_id}")
+    print("Instagram Post Published:", publish_id)
 
 
 if __name__ == "__main__":
