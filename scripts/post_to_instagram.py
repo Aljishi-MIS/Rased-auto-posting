@@ -1,121 +1,117 @@
 import os
-import requests
+import json
 import time
+import requests
 
-FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN")
+GRAPH_URL = "https://graph.facebook.com/v22.0"
 
-IMAGE_URL = os.getenv(
-    "IMAGE_URL",
-    "https://raw.githubusercontent.com/Aljishi/TASI-Liquidity/main/output.png"
-)
+IG_USER_ID = os.getenv("IG_USER_ID")
+IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN")
+IMAGE_URL = os.getenv("IMAGE_URL")
 
-CAPTION = """
-🚀 TASI SMART BOT
+DATA_PATH = "data/daily.json"
 
-📈 تحليل فني وزخم لحظي
-🤖 إشارات مدعومة بالذكاء الاصطناعي
-🇸🇦 السوق السعودي - تاسي
 
-⚠️ المحتوى تعليمي فقط وليس توصية استثمارية
+def load_daily_data():
+    with open(DATA_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def build_caption(data):
+    stock_name = data.get("stock_name", "")
+    symbol = data.get("symbol", "")
+    price = data.get("price", "")
+    entry = data.get("entry", "")
+    target1 = data.get("target1", "")
+    target2 = data.get("target2", "")
+    stop_loss = data.get("stop_loss", "")
+    momentum = data.get("momentum", "قوي")
+    note = data.get("note", "قراءة فنية تعليمية مبنية على الزخم والسيولة.")
+
+    return f"""🚀 إشارة مضارب اليومية
+
+📊 {stock_name} - {symbol}
+
+💰 السعر الحالي: {price} ريال
+🎯 نقطة الدخول: {entry} ريال
+
+🟢 الهدف الأول: {target1} ريال
+🟢 الهدف الثاني: {target2} ريال
+
+🔴 وقف الخسارة: {stop_loss} ريال
+
+⚡ الزخم: {momentum}
+
+📌 قراءة فنية:
+{note}
+
+⚠️ محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية
+
+#تاسي #السوق_السعودي #أسهم #مضارب
 """
 
-GRAPH_URL = "https://graph.facebook.com/v19.0"
 
+def create_media_container(caption):
+    if not IG_USER_ID:
+        raise ValueError("Missing IG_USER_ID secret")
 
-def get_instagram_business_id():
-    url = f"{GRAPH_URL}/me/accounts"
+    if not IG_ACCESS_TOKEN:
+        raise ValueError("Missing IG_ACCESS_TOKEN secret")
 
-    response = requests.get(
-        url,
-        params={
-            "access_token": FB_PAGE_TOKEN
-        },
-        timeout=60
-    )
-
-    data = response.json()
-
-    if "data" not in data:
-        raise RuntimeError(f"Failed to fetch pages: {data}")
-
-    page_id = data["data"][0]["id"]
-
-    ig_response = requests.get(
-        f"{GRAPH_URL}/{page_id}",
-        params={
-            "fields": "instagram_business_account",
-            "access_token": FB_PAGE_TOKEN
-        },
-        timeout=60
-    )
-
-    ig_data = ig_response.json()
-
-    if "instagram_business_account" not in ig_data:
-        raise RuntimeError(
-            "Instagram business account not connected to page"
-        )
-
-    return ig_data["instagram_business_account"]["id"]
-
-
-def create_media_container(ig_user_id):
-    url = f"{GRAPH_URL}/{ig_user_id}/media"
+    if not IMAGE_URL:
+        raise ValueError("Missing IMAGE_URL environment variable")
 
     response = requests.post(
-        url,
+        f"{GRAPH_URL}/{IG_USER_ID}/media",
         data={
             "image_url": IMAGE_URL,
-            "caption": CAPTION,
-            "access_token": FB_PAGE_TOKEN
+            "caption": caption,
+            "access_token": IG_ACCESS_TOKEN,
         },
-        timeout=60
+        timeout=60,
     )
 
     result = response.json()
+    print("Instagram create media response:", result)
 
     if "id" not in result:
-        raise RuntimeError(f"Media container failed: {result}")
+        raise RuntimeError(f"Instagram media container failed: {result}")
 
     return result["id"]
 
 
-def publish_media(ig_user_id, creation_id):
-    url = f"{GRAPH_URL}/{ig_user_id}/media_publish"
-
+def publish_media(creation_id):
     response = requests.post(
-        url,
+        f"{GRAPH_URL}/{IG_USER_ID}/media_publish",
         data={
             "creation_id": creation_id,
-            "access_token": FB_PAGE_TOKEN
+            "access_token": IG_ACCESS_TOKEN,
         },
-        timeout=60
+        timeout=60,
     )
 
     result = response.json()
+    print("Instagram publish response:", result)
 
     if "id" not in result:
-        raise RuntimeError(f"Publish failed: {result}")
+        raise RuntimeError(f"Instagram publish failed: {result}")
 
     return result["id"]
 
 
 def main():
-    print("Fetching Instagram Business ID...")
-    ig_user_id = get_instagram_business_id()
+    data = load_daily_data()
+    caption = build_caption(data)
 
-    print(f"Instagram User ID: {ig_user_id}")
-
-    print("Creating media container...")
-    creation_id = create_media_container(ig_user_id)
+    print("Creating Instagram media container...")
+    creation_id = create_media_container(caption)
 
     time.sleep(10)
 
-    print("Publishing to Instagram...")
-    media_id = publish_media(ig_user_id, creation_id)
+    print("Publishing Instagram media...")
+    media_id = publish_media(creation_id)
 
-    print("Instagram post published successfully")
-    print(f"Media ID: {media_id}")
+    print(f"Instagram post published successfully: {media_id}")
 
 
 if __name__ == "__main__":
