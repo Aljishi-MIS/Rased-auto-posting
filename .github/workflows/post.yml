@@ -1,17 +1,9 @@
-# .github/workflows/post.yml
-
 name: TASI AI Auto Posting
 
 on:
   workflow_dispatch:
-
   schedule:
-    - cron: "0 7 * * 0-4"
-    - cron: "0 9 * * 0-4"
-    - cron: "0 11 * * 0-4"
-
-permissions:
-  contents: write
+    - cron: "*/30 6-14 * * 0-4"
 
 jobs:
   auto-post:
@@ -28,15 +20,13 @@ jobs:
 
       - name: Install Requirements
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Fetch Market Data
         env:
-          API_KEY: ${{ secrets.API_KEY }}
-          API_URL: ${{ secrets.API_URL }}
+          SAHM_API_KEY: ${{ secrets.SAHM_API_KEY }}
         run: |
-          python scripts/fetch_api_data.py
+          python scripts/fetch_market_data.py
 
       - name: Generate Post Image
         run: |
@@ -45,7 +35,6 @@ jobs:
       - name: Upload output.png to GitHub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python scripts/upload_output.py
 
@@ -54,19 +43,20 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python scripts/post_to_telegram.py
+          python scripts/send_telegram.py
 
       - name: Post to Facebook
         env:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          IMAGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/main/output.png
         run: |
           python scripts/post_to_facebook.py
 
       - name: Post to Instagram
         env:
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
-          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           IMAGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/main/output.png
         run: |
           python scripts/post_to_instagram.py
