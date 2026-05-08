@@ -1,4 +1,6 @@
-pillow
 requests
-arabic-reshaper
-python-bidi
+python-dotenv
+Pillow
+matplotlib
+pandas
+numpy
