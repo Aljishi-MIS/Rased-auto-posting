@@ -1,19 +1,16 @@
-name: TASI AI Auto Posting
+name: TASI Signals Bot
 
 on:
   workflow_dispatch:
-
   schedule:
-    - cron: "0 7 * * 0-4"
-    - cron: "0 9 * * 0-4"
-    - cron: "0 11 * * 0-4"
+    - cron: "*/5 7-12 * * 0-4"
 
 jobs:
-  auto-post:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -21,39 +18,25 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Requirements
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-      - name: Generate AI Post
-        run: |
-          python scripts/generate_post.py
-
-      - name: Upload output.png to GitHub
+      - name: Run bot
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          python scripts/upload_output.py
+          API_KEY: ${{ secrets.API_KEY }}
+          API_URL: ${{ secrets.API_URL }}
 
-      - name: Send to Telegram
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python scripts/post_to_telegram.py
-
-      - name: Post to Facebook
-        env:
+          FB_APP_ID: ${{ secrets.FB_APP_ID }}
+          FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-        run: |
-          python scripts/post_to_facebook.py
 
-      - name: Post to Instagram
-        env:
-          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-          IMAGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/main/output.png
-        run: |
-          python scripts/post_to_instagram.py
+          IG_APP_ID: ${{ secrets.IG_APP_ID }}
+          IG_APP_SECRET: ${{ secrets.IG_APP_SECRET }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+        run: python main.py
