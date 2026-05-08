@@ -6,37 +6,48 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")
 
 FILE_PATH = "output.png"
+TARGET_PATH = "output.png"
+BRANCH = "main"
 
 
 def upload_image():
+    if not GITHUB_TOKEN:
+        raise ValueError("Missing GITHUB_TOKEN")
+
+    if not GITHUB_REPOSITORY:
+        raise ValueError("Missing GITHUB_REPOSITORY")
+
     if not os.path.exists(FILE_PATH):
         raise FileNotFoundError("output.png not found")
 
     with open(FILE_PATH, "rb") as f:
-        content = base64.b64encode(f.read()).decode()
+        content = base64.b64encode(f.read()).decode("utf-8")
 
     api_url = (
         f"https://api.github.com/repos/"
-        f"{GITHUB_REPOSITORY}/contents/output.png"
+        f"{GITHUB_REPOSITORY}/contents/{TARGET_PATH}"
     )
 
-    get_response = requests.get(
-        api_url,
-        headers={
-            "Authorization": f"token {GITHUB_TOKEN}"
-        },
-        timeout=60
-    )
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+    }
 
     sha = None
+    existing = requests.get(
+        api_url,
+        headers=headers,
+        params={"ref": BRANCH},
+        timeout=60,
+    )
 
-    if get_response.status_code == 200:
-        sha = get_response.json()["sha"]
+    if existing.status_code == 200:
+        sha = existing.json().get("sha")
 
     payload = {
         "message": "Update output image",
         "content": content,
-        "branch": "main"
+        "branch": BRANCH,
     }
 
     if sha:
@@ -44,19 +55,18 @@ def upload_image():
 
     response = requests.put(
         api_url,
-        headers={
-            "Authorization": f"token {GITHUB_TOKEN}"
-        },
+        headers=headers,
         json=payload,
-        timeout=60
+        timeout=60,
     )
 
-    print(response.text)
+    result = response.json()
+    print("GitHub upload response:", result)
 
     if response.status_code not in [200, 201]:
-        raise RuntimeError("Failed to upload image")
+        raise RuntimeError(f"Failed to upload output.png: {result}")
 
-    print("Image uploaded successfully")
+    print("output.png uploaded successfully")
 
 
 if __name__ == "__main__":
