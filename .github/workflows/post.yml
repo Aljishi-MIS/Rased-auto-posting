@@ -24,7 +24,8 @@ jobs:
 
       - name: Fetch Market Data
         env:
-          SAHM_API_KEY: ${{ secrets.SAHM_API_KEY }}
+          API_KEY: ${{ secrets.API_KEY }}
+          API_URL: ${{ secrets.API_URL }}
         run: |
           python scripts/fetch_market_data.py
 
