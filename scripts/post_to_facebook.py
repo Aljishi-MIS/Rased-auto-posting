@@ -2,6 +2,8 @@ import os
 import json
 import requests
 
+GRAPH_URL = "https://graph.facebook.com/v22.0"
+
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN")
 
@@ -23,10 +25,7 @@ def build_caption(data):
     target2 = data.get("target2", "")
     stop_loss = data.get("stop_loss", "")
     momentum = data.get("momentum", "قوي")
-    note = data.get(
-        "note",
-        "قراءة فنية تعليمية لسهم قريب من منطقة مقاومة مع متابعة السيولة."
-    )
+    note = data.get("note", "قراءة فنية تعليمية مبنية على الزخم والسيولة.")
 
     return f"""🚀 إشارة مضارب اليومية
 
@@ -49,6 +48,7 @@ def build_caption(data):
 
 تابعنا:
 t.me/TASI_Smart
+instagram.com/tasi.signals.sa
 """
 
 
@@ -60,38 +60,30 @@ def post_to_facebook():
         raise ValueError("Missing FB_PAGE_TOKEN secret")
 
     if not os.path.exists(IMAGE_PATH):
-        raise FileNotFoundError(f"{IMAGE_PATH} not found")
+        raise FileNotFoundError("output.png not found")
 
     data = load_daily_data()
     caption = build_caption(data)
 
-    url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
-
-    with open(IMAGE_PATH, "rb") as image_file:
-        response = requests.post(
-            url,
-            data={
-                "caption": caption,
-                "access_token": FB_PAGE_TOKEN,
-            },
-            files={
-                "source": image_file,
-            },
-            timeout=60,
-        )
-
-    print(response.text)
-
-    if response.status_code != 200:
-        raise RuntimeError("Facebook posting failed")
+    response = requests.post(
+        f"{GRAPH_URL}/{FB_PAGE_ID}/photos",
+        data={
+            "caption": caption,
+            "access_token": FB_PAGE_TOKEN,
+        },
+        files={
+            "source": open(IMAGE_PATH, "rb"),
+        },
+        timeout=60,
+    )
 
     result = response.json()
+    print("Facebook response:", result)
 
-    if not result.get("id"):
-        raise RuntimeError(f"Facebook did not return post id: {result}")
+    if "id" not in result:
+        raise RuntimeError(f"Facebook posting failed: {result}")
 
-    print("Posted to Facebook successfully")
-    print(f"Facebook photo id: {result.get('id')}")
+    print(f"Facebook post published successfully: {result['id']}")
 
 
 if __name__ == "__main__":
