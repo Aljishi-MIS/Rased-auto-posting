@@ -3,15 +3,26 @@ name: TASI AI — مضارب
 on:
   workflow_dispatch:
   schedule:
-    # كل 30 دقيقة أثناء ساعات السوق (9:30 - 15:00 KSA = 6:30-12:00 UTC)
-    # أيام الأحد - الخميس
-    - cron: "*/30 6-12 * * 0-4"
+    # السوق السعودي: الأحد-الخميس 10:00ص - 3:00م KSA
+    # KSA = UTC+3 → يعني 7:00 - 12:00 UTC
+    # كل 30 دقيقة أثناء السوق
+    - cron: "0,30 7-11 * * 0-4"
+    # إضافة 12:00 UTC (3:00م KSA — آخر دقائق السوق)
+    - cron: "0 12 * * 0-4"
+
+    # التقرير الأسبوعي: كل خميس 4:00م KSA (13:00 UTC)
+    - cron: "0 13 * * 4"
 
 jobs:
 
   # ─── الوظيفة الرئيسية: فحص وإصدار الإشارة ───────────────
   auto-post:
     runs-on: ubuntu-latest
+    # يشتغل فقط في أوقات السوق — ليس وقت التقرير
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' &&
+       !contains('0 13 * * 4', github.event.schedule))
 
     steps:
       - name: Checkout Repository
@@ -32,17 +43,16 @@ jobs:
           API_URL: ${{ secrets.API_URL }}
         run: python scripts/fetch_api_data.py
 
-      # ── 2. فحص جودة الإشارة — إذا فشل يتوقف كل شيء ───────
+      # ── 2. فحص جودة الإشارة ────────────────────────────────
       - name: Check Signal Quality
         id: quality_check
         run: python scripts/should_post.py
-        # لا continue-on-error هنا — يوقف الـ workflow إذا الإشارة ضعيفة
 
       # ── 3. توليد الصورة ────────────────────────────────────
       - name: Generate Post Image
         run: python scripts/generate_post.py
 
-      # ── 4. تسجيل الإشارة في السجل ──────────────────────────
+      # ── 4. تسجيل الإشارة ───────────────────────────────────
       - name: Log Signal
         run: python scripts/log_signal.py
         continue-on-error: true
@@ -78,7 +88,7 @@ jobs:
         run: python scripts/post_to_instagram.py
         continue-on-error: true
 
-      # ── 9. حفظ السجل في GitHub ─────────────────────────────
+      # ── 9. حفظ السجل ───────────────────────────────────────
       - name: Commit Signal Log
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -86,15 +96,15 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/signals_log.csv || true
-          git diff --cached --quiet || git commit -m "📊 تسجيل إشارة جديدة"
+          git diff --cached --quiet || git commit -m "📊 إشارة جديدة"
           git push || true
         continue-on-error: true
 
 
-  # ─── وظيفة مستقلة: تتبع نتائج الإشارات (يومياً بعد الإغلاق) ───
+  # ─── تتبع النتائج: يومياً بعد إغلاق السوق ────────────────
   track-results:
     runs-on: ubuntu-latest
-    # يشتغل يومياً الساعة 3:30 مساءً KSA (12:30 UTC) بعد إغلاق السوق
+    # كل يوم 3:30م KSA (12:30 UTC) أيام السوق
     if: github.event_name == 'schedule'
 
     steps:
@@ -116,21 +126,22 @@ jobs:
         run: python scripts/track_results.py
         continue-on-error: true
 
-      - name: Commit Updated Results
+      - name: Commit Results
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/signals_log.csv || true
-          git diff --cached --quiet || git commit -m "📈 تحديث نتائج الإشارات"
+          git diff --cached --quiet || git commit -m "📈 تحديث النتائج"
           git push || true
         continue-on-error: true
 
 
-  # ─── تقرير أسبوعي كل خميس ────────────────────────────────
+  # ─── التقرير الأسبوعي: كل خميس 4:00م KSA ─────────────────
   weekly-report:
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
 
     steps:
       - name: Checkout Repository
