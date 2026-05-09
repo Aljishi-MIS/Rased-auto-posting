@@ -20,7 +20,7 @@ MIN_SCORE        = 75
 RSI_MIN          = 45
 RSI_MAX          = 70
 MIN_VOLUME_RATIO = 1.8
-MIN_RR           = 2.0
+MIN_RR           = 1.5
 MAX_SIGNALS_WEEK = 3   # الحد الأقصى في الأسبوع
 
 
