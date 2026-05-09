@@ -20,16 +20,15 @@ MIN_SCORE        = 75
 RSI_MIN          = 45
 RSI_MAX          = 70
 MIN_VOLUME_RATIO = 1.8
-MIN_RR           = 1.5
-MAX_SIGNALS_WEEK = 3   # الحد الأقصى في الأسبوع
+MIN_RR           = 0.8   # مؤقت للاختبار — يرجع 1.5 بعد التأكد
+MAX_SIGNALS_WEEK = 3
 
 
 def signals_this_week():
-    """يحسب عدد الإشارات المنشورة هذا الأسبوع"""
     if not os.path.exists(LOG_FILE):
         return 0
-    today     = date.today()
-    week_start = today.toordinal() - today.weekday()  # الاثنين
+    today      = date.today()
+    week_start = today.toordinal() - today.weekday()
     count = 0
     try:
         with open(LOG_FILE, "r", encoding="utf-8-sig") as f:
@@ -97,6 +96,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if check(data):
-        sys.exit(0)   # ✅ انشر
+        sys.exit(0)
     else:
-        sys.exit(1)   # 🚫 لا تنشر
+        sys.exit(1)
