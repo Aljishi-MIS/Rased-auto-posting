@@ -1,225 +1,109 @@
 import json
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-
 with open("data/daily.json", "r", encoding="utf-8") as f:
     data = json.load(f)
 
-
-W, H = 1080, 1080
-
-BG = "#07101B"
-CARD = "#0B1624"
-ROW = "#0D1B2A"
-GOLD = "#F0B429"
-GREEN = "#22C55E"
-RED = "#EF4444"
-WHITE = "#FFFFFF"
+W, H   = 1080, 1080
+BG     = "#07101B"
+CARD   = "#0B1624"
+ROW    = "#0D1B2A"
+GOLD   = "#F0B429"
 BORDER = "#D99A00"
-MUTED = "#CBD5E1"
+GREEN  = "#22C55E"
+RED    = "#EF4444"
+WHITE  = "#FFFFFF"
+MUTED  = "#CBD5E1"
 
-img = Image.new("RGB", (W, H), BG)
+def F(s):  return ImageFont.truetype("assets/Cairo-Bold.ttf",    s)
+def FR(s): return ImageFont.truetype("assets/Tajawal-Regular.ttf",s)
+
+def tc(draw,x,y,text,font,color):
+    draw.text((x,y),str(text),fill=color,font=font,anchor="mm",direction="rtl",language="ar")
+def tr(draw,x,y,text,font,color):
+    draw.text((x,y),str(text),fill=color,font=font,anchor="rm",direction="rtl",language="ar")
+def tl(draw,x,y,text,font,color):
+    draw.text((x,y),str(text),fill=color,font=font,anchor="lm",direction="rtl",language="ar")
+
+img  = Image.new("RGB",(W,H),BG)
 draw = ImageDraw.Draw(img)
 
-
-font_path = "assets/Cairo-Bold.ttf"
-
-font_brand = ImageFont.truetype(font_path, 58)
-font_sub = ImageFont.truetype(font_path, 30)
-font_stock = ImageFont.truetype(font_path, 58)
-
-font_label = ImageFont.truetype(font_path, 30)
-font_value = ImageFont.truetype(font_path, 32)
-
-font_note = ImageFont.truetype(font_path, 16)
-font_footer = ImageFont.truetype(font_path, 21)
-font_link = ImageFont.truetype(font_path, 25)
-
-
-def text_center(x, y, text, font, color):
-    draw.text(
-        (x, y),
-        str(text),
-        fill=color,
-        font=font,
-        anchor="mm",
-        direction="rtl",
-        language="ar",
-    )
-
-
-def text_right(x, y, text, font, color):
-    draw.text(
-        (x, y),
-        str(text),
-        fill=color,
-        font=font,
-        anchor="rm",
-        direction="rtl",
-        language="ar",
-    )
-
-
-def text_left(x, y, text, font, color):
-    draw.text(
-        (x, y),
-        str(text),
-        fill=color,
-        font=font,
-        anchor="lm",
-        direction="rtl",
-        language="ar",
-    )
-
-
-def paste_logo():
-    try:
-        logo = Image.open("assets/logo.png").convert("RGBA")
-        logo = logo.resize((108, 108))
-
-        mask = Image.new("L", (108, 108), 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, 108, 108), fill=255)
-
-        img.paste(logo, (486, 78), mask)
-    except Exception:
-        pass
-
-
-def draw_icon(cx, cy, kind, color):
-    draw.ellipse((cx - 26, cy - 26, cx + 26, cy + 26), outline=color, width=3)
-
-    if kind == "price":
-        draw.rectangle((cx - 12, cy + 5, cx - 6, cy + 16), fill=WHITE)
-        draw.rectangle((cx - 2, cy - 2, cx + 4, cy + 16), fill=WHITE)
-        draw.rectangle((cx + 8, cy - 12, cx + 14, cy + 16), fill=WHITE)
-
-    elif kind == "target":
-        draw.ellipse((cx - 11, cy - 11, cx + 11, cy + 11), outline=color, width=3)
-        draw.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), fill=color)
-        draw.line((cx + 7, cy - 7, cx + 18, cy - 18), fill=color, width=4)
-
-    elif kind == "stop":
-        draw.polygon(
-            [
-                (cx, cy - 18),
-                (cx + 16, cy - 7),
-                (cx + 12, cy + 14),
-                (cx, cy + 21),
-                (cx - 12, cy + 14),
-                (cx - 16, cy - 7),
-            ],
-            outline=color,
-        )
-        draw.line((cx - 7, cy - 7, cx + 7, cy + 7), fill=color, width=4)
-        draw.line((cx + 7, cy - 7, cx - 7, cy + 7), fill=color, width=4)
-
-
-# Glow
-glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-ImageDraw.Draw(glow).ellipse((260, -180, 820, 330), fill=(240, 180, 41, 38))
+glow = Image.new("RGBA",(W,H),(0,0,0,0))
+ImageDraw.Draw(glow).ellipse((260,-180,820,330),fill=(240,180,41,38))
 glow = glow.filter(ImageFilter.GaussianBlur(75))
-img = Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB")
+img  = Image.alpha_composite(img.convert("RGBA"),glow).convert("RGB")
 draw = ImageDraw.Draw(img)
 
+draw.rounded_rectangle((55,38,W-55,H-38),radius=46,fill=CARD,outline=BORDER,width=3)
 
-# Frame
-draw.rounded_rectangle(
-    (110, 45, 970, 1035),
-    radius=46,
-    fill=CARD,
-    outline=BORDER,
-    width=3,
-)
+LS=108; LX=W//2-LS//2; LY=74
+try:
+    logo=Image.open("assets/logo.png").convert("RGBA")
+    logo=logo.resize((LS,LS),Image.LANCZOS)
+    mask=Image.new("L",(LS,LS),0)
+    ImageDraw.Draw(mask).ellipse((0,0,LS,LS),fill=255)
+    img.paste(logo,(LX,LY),mask)
+    draw=ImageDraw.Draw(img)
+except:
+    pass
 
-paste_logo()
+tc(draw,W//2,220,"مضارب",F(68),GOLD)
+tc(draw,W//2,280,"تحليل فني وتعليمي لسوق الأسهم السعودية",FR(29),WHITE)
 
+def divider(y):
+    draw.line([(240,y),(W//2-12,y)],fill=BORDER,width=2)
+    draw.line([(W//2+12,y),(W-240,y)],fill=BORDER,width=2)
+    draw.ellipse((W//2-7,y-7,W//2+7,y+7),fill=GOLD)
 
-# Header
-text_center(540, 215, "مضارب", font_brand, GOLD)
-text_center(540, 275, "تحليل فني وتعليمي لسوق الأسهم السعودية", font_sub, WHITE)
+divider(330)
 
-draw.line((250, 335, 830, 335), fill=BORDER, width=2)
-draw.ellipse((532, 331, 548, 347), fill=GOLD)
+sn=data.get("stock_name",""); sym=data.get("symbol","")
+tc(draw,W//2,392,f"{sn} - {sym}",F(60),WHITE)
 
+divider(444)
 
-# Stock
-stock_name = data.get("stock_name", "")
-symbol = data.get("symbol", "")
-text_center(540, 395, f"{stock_name} - {symbol}", font_stock, WHITE)
-
-
-# Rows
-rows = [
-    ("السعر الحالي", data.get("price", ""), WHITE, "price"),
-    ("نقطة الدخول", data.get("entry", ""), GOLD, "target"),
-    ("الهدف الأول", data.get("target1", ""), GREEN, "target"),
-    ("الهدف الثاني", data.get("target2", ""), GREEN, "target"),
-    ("وقف الخسارة", data.get("stop_loss", ""), RED, "stop"),
+rows=[
+    ("السعر الحالي:",data.get("price",""),   WHITE,"price"),
+    ("نقطة الدخول:", data.get("entry",""),   GOLD, "entry"),
+    ("الهدف الأول:", data.get("target1",""), GREEN,"target"),
+    ("الهدف الثاني:",data.get("target2",""), GREEN,"target"),
+    ("وقف الخسارة:", data.get("stop_loss",""),RED, "stop"),
 ]
 
-y = 480
+y0=466; RH=78; MX=95
 
-for label, value, color, icon in rows:
-    draw.rounded_rectangle(
-        (210, y - 33, 870, y + 33),
-        radius=18,
-        fill=ROW,
-        outline="#6B7280",
-        width=2,
-    )
+for i,(label,value,color,kind) in enumerate(rows):
+    y=y0+i*RH; yc=y+RH//2
+    draw.rounded_rectangle((MX,y+4,W-MX,y+RH-4),radius=20,fill=ROW,outline="#2A3F55",width=2)
+    ix=W-MX-40
+    draw.ellipse((ix-26,yc-26,ix+26,yc+26),outline=color,width=3)
+    if kind=="price":
+        for bx,bh in [(-11,7),(0,14),(11,21)]:
+            draw.rectangle((ix+bx,yc+13-bh,ix+bx+8,yc+13),fill=WHITE)
+    elif kind in("entry","target"):
+        draw.ellipse((ix-13,yc-13,ix+13,yc+13),outline=color,width=3)
+        draw.ellipse((ix-5,yc-5,ix+5,yc+5),fill=color)
+        draw.line([(ix+9,yc-9),(ix+19,yc-19)],fill=color,width=4)
+    elif kind=="stop":
+        pts=[(ix,yc-18),(ix+15,yc-7),(ix+11,yc+13),(ix,yc+20),(ix-11,yc+13),(ix-15,yc-7)]
+        draw.polygon(pts,outline=color)
+        draw.line([(ix-8,yc-8),(ix+8,yc+8)],fill=color,width=4)
+        draw.line([(ix+8,yc-8),(ix-8,yc+8)],fill=color,width=4)
+    tr(draw,ix-34,yc,label,F(30),color)
+    tl(draw,MX+28,yc,f"{value} ريال",F(32),color)
 
-    draw_icon(835, y, icon, color)
-    text_right(760, y, f"{label}:", font_label, color)
-    text_left(300, y, f"{value} ريال", font_value, color)
+note_y=y0+len(rows)*RH+16
+note=data.get("note","قراءة فنية تعليمية لسهم قريب من منطقة مقاومة مع متابعة السيولة.")
+draw.rounded_rectangle((MX-10,note_y,W-MX+10,note_y+66),radius=18,fill="#07111E",outline=BORDER,width=2)
+tc(draw,W//2,note_y+33,note,FR(22),MUTED)
 
-    y += 72
+div_y=note_y+88
+divider(div_y)
+tc(draw,W//2,div_y+28,"محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية",FR(22),MUTED)
 
+pill_y=div_y+60; pw=295
+draw.rounded_rectangle((W//2-pw//2,pill_y-22,W//2+pw//2,pill_y+22),radius=22,fill=CARD,outline=BORDER,width=2)
+draw.text((W//2,pill_y),"t.me/TASI_Smart",fill=GOLD,font=F(26),anchor="mm",direction="ltr")
 
-# Note
-draw.rounded_rectangle(
-    (175, 850, 905, 925),
-    radius=18,
-    fill="#07111E",
-    outline=GOLD,
-    width=3,
-)
-
-note = data.get(
-    "note",
-    "قراءة فنية تعليمية لسهم قريب من منطقة مقاومة مع متابعة السيولة."
-)
-
-text_center(
-    540,
-    885,
-    note,
-    font_note,
-    WHITE,
-)
-
-
-# Footer
-draw.line((250, 955, 830, 955), fill=BORDER, width=2)
-draw.ellipse((532, 950, 548, 966), fill=GOLD)
-
-text_center(
-    540,
-    985,
-    "محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية",
-    font_footer,
-    MUTED,
-)
-
-draw.rounded_rectangle(
-    (390, 1010, 690, 1055),
-    radius=22,
-    fill="#0B1624",
-    outline=GOLD,
-    width=2,
-)
-
-text_center(540, 1032, "t.me/TASI_Smart", font_link, GOLD)
-
-
-img.save("output.png", quality=95)
-print("Final Modareb post generated successfully.")
+img.save("output.png",quality=97)
+print("✅ Post generated successfully.")
