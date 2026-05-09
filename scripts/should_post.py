@@ -2,8 +2,6 @@
 should_post.py
 --------------
 يقرر هل الإشارة تستحق النشر أم لا.
-الشروط الصارمة للحفاظ على نسبة نجاح عالية.
-يخرج بـ exit code 1 إذا الإشارة ضعيفة → يوقف الـ workflow.
 """
 
 import json
@@ -20,7 +18,6 @@ MIN_SCORE        = 75
 RSI_MIN          = 45
 RSI_MAX          = 70
 MIN_VOLUME_RATIO = 1.8
-MIN_RR           = 0.8   # مؤقت للاختبار — يرجع 1.5 بعد التأكد
 MAX_SIGNALS_WEEK = 3
 
 
@@ -60,8 +57,6 @@ def check(data):
         reasons_fail.append(f"RSI {rsi:.0f} خارج النطاق ({RSI_MIN}-{RSI_MAX})")
     if volume_ratio < MIN_VOLUME_RATIO:
         reasons_fail.append(f"Volume {volume_ratio:.1f}x < {MIN_VOLUME_RATIO}x")
-    if rr < MIN_RR:
-        reasons_fail.append(f"R:R {rr:.1f} < {MIN_RR}")
 
     week_count = signals_this_week()
     if week_count >= MAX_SIGNALS_WEEK:
@@ -73,7 +68,7 @@ def check(data):
     print(f"  Score        : {score:>6}  {'✅' if score >= MIN_SCORE else '❌'} (min {MIN_SCORE})")
     print(f"  RSI          : {rsi:>6.0f}  {'✅' if RSI_MIN <= rsi <= RSI_MAX else '❌'} ({RSI_MIN}-{RSI_MAX})")
     print(f"  Volume Ratio : {volume_ratio:>6.1f}x {'✅' if volume_ratio >= MIN_VOLUME_RATIO else '❌'} (min {MIN_VOLUME_RATIO}x)")
-    print(f"  R:R          : {rr:>6.1f}  {'✅' if rr >= MIN_RR else '❌'} (min {MIN_RR})")
+    print(f"  R:R          : {rr:>6.1f}  ℹ️  (معلوماتي فقط — لا يوقف النشر)")
     print(f"  إشارات هذا الأسبوع: {week_count}/{MAX_SIGNALS_WEEK}")
 
     if reasons_fail:
