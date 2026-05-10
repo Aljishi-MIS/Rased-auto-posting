@@ -3,13 +3,9 @@ name: TASI AI — مضارب
 on:
   workflow_dispatch:
   schedule:
-    # السوق السعودي: الأحد-الخميس 9:30ص - 3:30م KSA
-    # KSA = UTC+3 → يعني 6:30 - 12:30 UTC
     - cron: "30 6 * * 0-4"
     - cron: "0,30 7-11 * * 0-4"
     - cron: "0,30 12 * * 0-4"
-
-    # التقرير الأسبوعي: كل خميس 4:00م KSA (13:00 UTC)
     - cron: "0 13 * * 4"
 
 jobs:
@@ -139,7 +135,9 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Generate Weekly Report
-        run: python scripts/weekly_report.py
+        run: |
+          python scripts/weekly_report.py
+          python scripts/generate_report_image.py
 
       - name: Send Report to Telegram
         env:
