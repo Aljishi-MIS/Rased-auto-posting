@@ -3,11 +3,14 @@ import json
 import requests
 from datetime import datetime
 
-API_URL = os.environ.get("API_URL")
-API_KEY = os.environ.get("API_KEY")
+API_KEY  = os.environ.get("API_KEY")
+API_URL  = os.environ.get("API_URL", "https://app.sahmk.sa/api/v1")
 
 SNAPSHOT_FILE = "data/market_snapshot.json"
-OUTPUT_FILE = "data/daily.json"
+OUTPUT_FILE   = "data/daily.json"
+
+# ─── الـ Header الصحيح لسهمك ───────────────────────────────
+HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 
 
 def safe_float(value, default=0.0):
@@ -17,172 +20,209 @@ def safe_float(value, default=0.0):
         return default
 
 
-def load_market_data():
-    if API_URL:
-        try:
-            headers = {}
-            if API_KEY:
-                headers["Authorization"] = f"Bearer {API_KEY}"
+def get(endpoint, params=None):
+    """GET request من API سهمك"""
+    try:
+        r = requests.get(
+            f"{API_URL}{endpoint}",
+            headers=HEADERS,
+            params=params or {},
+            timeout=15
+        )
+        print(f"  {endpoint} → HTTP {r.status_code}")
+        if r.status_code == 200:
+            return r.json()
+        else:
+            print(f"  Response: {r.text[:200]}")
+    except Exception as e:
+        print(f"  ❌ {endpoint}: {e}")
+    return None
 
-            response = requests.get(API_URL, headers=headers, timeout=12)
-            response.raise_for_status()
-            data = response.json()
 
-            if isinstance(data, dict) and "data" in data:
-                data = data["data"]
+def fetch_gainers():
+    data = get("/market/gainers/", {"limit": 25, "index": "TASI"})
+    if data:
+        stocks = data if isinstance(data, list) else data.get("gainers", data.get("data", []))
+        print(f"  ✅ gainers → {len(stocks)} سهم")
+        return stocks
+    return []
 
-            if isinstance(data, list) and len(data) > 0:
-                print("Loaded from API")
-                return data
 
-        except Exception as e:
-            print("API failed, using local snapshot")
-            print(e)
+def fetch_volume():
+    data = get("/market/volume/", {"limit": 25, "index": "TASI"})
+    if data:
+        stocks = data if isinstance(data, list) else data.get("stocks", data.get("data", []))
+        print(f"  ✅ volume  → {len(stocks)} سهم")
+        return stocks
+    return []
 
-    with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
 
-    print("Loaded from market_snapshot.json")
+def fetch_market_summary():
+    data = get("/market/summary/", {"index": "TASI"})
+    if data:
+        val = data.get("index_value", "—")
+        chg = safe_float(data.get("index_change_percent", 0))
+        print(f"  ✅ TASI    → {val} ({chg:+.2f}%)")
     return data
 
 
+def normalize(raw):
+    price      = safe_float(raw.get("price") or raw.get("close"))
+    high       = safe_float(raw.get("high"),   price * 1.01)
+    low        = safe_float(raw.get("low"),    price * 0.99)
+    volume     = safe_float(raw.get("volume"))
+    change_pct = safe_float(raw.get("change_percent") or raw.get("change_pct"))
+    avg_volume = safe_float(raw.get("avg_volume"), volume * 0.70)
+    resistance = safe_float(raw.get("resistance"), high)
+    support    = safe_float(raw.get("support"),    low)
+    rsi        = safe_float(raw.get("rsi"), max(20, min(80, 50 + change_pct * 3)))
+
+    return {
+        "name":           raw.get("name") or raw.get("name_ar") or str(raw.get("symbol", "")),
+        "symbol":         str(raw.get("symbol", "")),
+        "price":          price,
+        "high":           high,
+        "low":            low,
+        "volume":         volume,
+        "avg_volume":     avg_volume,
+        "change_percent": change_pct,
+        "resistance":     resistance,
+        "support":        support,
+        "rsi":            rsi,
+    }
+
+
+def load_market_data():
+    stocks = []
+
+    if not API_KEY:
+        print("⚠️  API_KEY مفقود")
+    else:
+        print(f"\n🔄 جلب البيانات من: {API_URL}\n")
+        fetch_market_summary()
+        gainers = fetch_gainers()
+        volume  = fetch_volume()
+
+        seen, all_raw = set(), []
+        for s in gainers + volume:
+            sym = str(s.get("symbol", ""))
+            if sym and sym not in seen:
+                seen.add(sym)
+                all_raw.append(s)
+
+        if all_raw:
+            stocks = [normalize(s) for s in all_raw if safe_float(s.get("price")) > 0]
+            print(f"\n📦 إجمالي الأسهم: {len(stocks)}")
+
+    # Fallback
+    if len(stocks) < 3:
+        print("\n📂 Fallback → market_snapshot.json")
+        with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        stocks = [normalize(s) for s in raw]
+
+    return stocks
+
+
 def calculate_score(stock):
-    price = safe_float(stock.get("price"))
-    high = safe_float(stock.get("high"), price)
-    low = safe_float(stock.get("low"), price)
-    resistance = safe_float(stock.get("resistance"), high)
-    support = safe_float(stock.get("support"), low)
-    volume = safe_float(stock.get("volume"))
-    avg_volume = safe_float(stock.get("avg_volume"), 1)
+    price          = safe_float(stock.get("price"))
+    high           = safe_float(stock.get("high"), price)
+    low            = safe_float(stock.get("low"),  price)
+    resistance     = safe_float(stock.get("resistance"), high)
+    support        = safe_float(stock.get("support"),    low)
+    volume         = safe_float(stock.get("volume"))
+    avg_volume     = max(safe_float(stock.get("avg_volume")), 1)
     change_percent = safe_float(stock.get("change_percent"))
-    rsi = safe_float(stock.get("rsi"), 50)
+    rsi            = safe_float(stock.get("rsi"), 50)
 
-    score = 0
-    reasons = []
+    score, reasons = 0, []
 
-    # 1) Breakout / near breakout
-    if price >= resistance:
-        score += 30
-        reasons.append("اختراق مقاومة")
-    elif resistance > 0 and ((resistance - price) / price) <= 0.015:
-        score += 22
-        reasons.append("قريب من اختراق مقاومة")
-    elif resistance > 0 and ((resistance - price) / price) <= 0.03:
-        score += 12
-        reasons.append("قريب من مقاومة مهمة")
+    if change_percent < -1:
+        return -999, ["تغير سلبي — مستبعد"], 0, 0
 
-    # 2) Volume spike
-    volume_ratio = volume / avg_volume if avg_volume > 0 else 0
+    # 1) Breakout
+    if resistance > 0:
+        dist = (resistance - price) / price
+        if price >= resistance:
+            score += 30; reasons.append("اختراق مقاومة")
+        elif dist <= 0.015:
+            score += 22; reasons.append("قريب جداً من الاختراق")
+        elif dist <= 0.03:
+            score += 12; reasons.append("قريب من مقاومة")
 
-    if volume_ratio >= 3:
-        score += 25
-        reasons.append("حجم تداول أعلى من المتوسط 3x")
-    elif volume_ratio >= 2:
-        score += 20
-        reasons.append("حجم تداول أعلى من المتوسط 2x")
-    elif volume_ratio >= 1.5:
-        score += 10
-        reasons.append("زيادة واضحة في السيولة")
+    # 2) Volume Spike
+    volume_ratio = volume / avg_volume
+    if   volume_ratio >= 3:   score += 25; reasons.append(f"حجم {volume_ratio:.1f}x")
+    elif volume_ratio >= 2:   score += 20; reasons.append(f"حجم {volume_ratio:.1f}x")
+    elif volume_ratio >= 1.5: score += 10; reasons.append("زيادة سيولة")
 
     # 3) RSI
-    if 45 <= rsi <= 65:
-        score += 20
-        reasons.append("RSI صحي للزخم")
-    elif 35 <= rsi < 45:
-        score += 12
-        reasons.append("RSI قريب من منطقة ارتداد")
-    elif 65 < rsi <= 72:
-        score += 8
-        reasons.append("RSI قوي مع مراقبة التشبع")
-    elif rsi > 75:
-        score -= 15
-        reasons.append("RSI مرتفع وقد يكون السهم متشبع")
+    if   50 <= rsi <= 65:  score += 20; reasons.append(f"RSI {rsi:.0f} صحي")
+    elif 40 <= rsi < 50:   score += 12; reasons.append(f"RSI {rsi:.0f} بداية زخم")
+    elif 65 < rsi <= 72:   score +=  8; reasons.append(f"RSI {rsi:.0f} قوي")
+    elif rsi > 75:         score -= 15; reasons.append(f"RSI {rsi:.0f} تشبع شرائي")
 
     # 4) Close near high
     daily_range = high - low
-    close_position = ((price - low) / daily_range) if daily_range > 0 else 0
+    close_pos   = ((price - low) / daily_range) if daily_range > 0 else 0.5
+    if   close_pos >= 0.85: score += 20; reasons.append("إغلاق عند القمة")
+    elif close_pos >= 0.70: score += 12; reasons.append("تمركز إيجابي")
 
-    if close_position >= 0.85:
-        score += 20
-        reasons.append("إغلاق قريب من أعلى السعر")
-    elif close_position >= 0.70:
-        score += 12
-        reasons.append("تمركز سعري إيجابي")
+    # 5) Momentum
+    if   change_percent >= 3:   score += 15; reasons.append(f"ارتفاع {change_percent:.1f}%")
+    elif change_percent >= 1.5: score += 10; reasons.append(f"ارتفاع {change_percent:.1f}%")
 
-    # 5) Price momentum
-    if change_percent >= 3:
-        score += 15
-        reasons.append("زخم سعري قوي")
-    elif change_percent >= 1.5:
-        score += 10
-        reasons.append("إغلاق إيجابي")
-    elif change_percent < 0:
-        score -= 20
-        reasons.append("تغير سلبي")
+    # 6) R:R
+    entry     = max(price, resistance * 0.999) if resistance > price * 0.95 else price
+    stop_loss = max(support, entry * 0.97)
+    target1   = entry * 1.03
+    risk      = entry - stop_loss
+    reward    = target1 - entry
+    rr        = reward / risk if risk > 0 else 0
 
-    # 6) Risk reward
-    entry = max(price, resistance)
-    stop_loss = support
-    target1 = entry * 1.03
-
-    risk = entry - stop_loss
-    reward = target1 - entry
-    rr = reward / risk if risk > 0 else 0
-
-    if rr >= 2.5:
-        score += 20
-        reasons.append("R:R ممتاز")
-    elif rr >= 1.8:
-        score += 10
-        reasons.append("R:R مقبول")
-    else:
-        score -= 10
-        reasons.append("R:R ضعيف")
+    if   rr >= 2.5: score += 20; reasons.append(f"R:R {rr:.1f} ممتاز")
+    elif rr >= 1.5: score += 10; reasons.append(f"R:R {rr:.1f} جيد")
+    else:           score -= 10; reasons.append(f"R:R {rr:.1f} ضعيف")
 
     return score, reasons, rr, volume_ratio
 
 
 def build_daily_json(stock, score, reasons, rr, volume_ratio):
-    price = safe_float(stock.get("price"))
+    price      = safe_float(stock.get("price"))
     resistance = safe_float(stock.get("resistance"), safe_float(stock.get("high"), price))
-    support = safe_float(stock.get("support"), safe_float(stock.get("low"), price))
+    support    = safe_float(stock.get("support"),    safe_float(stock.get("low"),  price))
 
-    entry = round(max(price, resistance), 2)
+    entry     = round(price * 1.001, 2)
+    target1   = round(entry * 1.03, 2)
+    target2   = round(entry * 1.06, 2)
+    stop_loss = round(max(support, entry * 0.97), 2)
 
-    # أهداف مبنية على المقاومة/الاختراق وليس حساب ثابت فقط
-    target1 = round(entry * 1.03, 2)
-    target2 = round(entry * 1.06, 2)
+    momentum = (
+        "قوي جداً" if score >= 85 else
+        "قوي"      if score >= 70 else
+        "متوسط"    if score >= 55 else "ضعيف"
+    )
 
-    # وقف الخسارة أقرب دعم أو 2% أقل من الدخول
-    stop_loss = round(max(support, entry * 0.98), 2)
-
-    if score >= 85:
-        momentum = "قوي جداً"
-    elif score >= 70:
-        momentum = "قوي"
-    elif score >= 55:
-        momentum = "متوسط"
-    else:
-        momentum = "ضعيف"
-
-    note_reasons = " + ".join(reasons[:3])
+    from_api = bool(API_KEY) and len(reasons) > 0
 
     return {
-        "brand": "مضارب",
-        "mode": "morning",
-        "stock_name": stock.get("name", ""),
-        "symbol": str(stock.get("symbol", "")),
-        "price": f"{price:.2f}",
-        "entry": f"{entry:.2f}",
-        "target1": f"{target1:.2f}",
-        "target2": f"{target2:.2f}",
-        "stop_loss": f"{stop_loss:.2f}",
-        "momentum": momentum,
-        "score": score,
-        "rr": round(rr, 2),
+        "brand":        "مضارب",
+        "mode":         "morning",
+        "stock_name":   stock.get("name", ""),
+        "symbol":       str(stock.get("symbol", "")),
+        "price":        f"{price:.2f}",
+        "entry":        f"{entry:.2f}",
+        "target1":      f"{target1:.2f}",
+        "target2":      f"{target2:.2f}",
+        "stop_loss":    f"{stop_loss:.2f}",
+        "momentum":     momentum,
+        "score":        score,
+        "rsi":          round(safe_float(stock.get("rsi")), 1),
+        "rr":           round(rr, 2),
         "volume_ratio": round(volume_ratio, 2),
-        "source": "API" if API_URL else "market_snapshot",
-        "note": f"قراءة فنية تعليمية: {note_reasons}."
+        "source":       "sahmk_api" if from_api else "market_snapshot",
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "note":         f"قراءة فنية تعليمية: {' + '.join(reasons[:3])}."
     }
 
 
@@ -190,49 +230,45 @@ def main():
     stocks = load_market_data()
 
     ranked = []
-
     for stock in stocks:
-        price = safe_float(stock.get("price"))
-        volume = safe_float(stock.get("volume"))
-
-        if price <= 0 or volume <= 0:
+        if safe_float(stock.get("price")) <= 0 or safe_float(stock.get("volume")) <= 0:
             continue
-
-        score, reasons, rr, volume_ratio = calculate_score(stock)
-
-        ranked.append({
-            "score": score,
-            "stock": stock,
-            "reasons": reasons,
-            "rr": rr,
-            "volume_ratio": volume_ratio
-        })
+        score, reasons, rr, vol_ratio = calculate_score(stock)
+        if score > 0:
+            ranked.append({"score": score, "stock": stock,
+                           "reasons": reasons, "rr": rr, "volume_ratio": vol_ratio})
 
     if not ranked:
-        raise Exception("No valid stocks found")
+        for stock in stocks:
+            score, reasons, rr, vol_ratio = calculate_score(stock)
+            ranked.append({"score": score, "stock": stock,
+                           "reasons": reasons, "rr": rr, "volume_ratio": vol_ratio})
+
+    if not ranked:
+        raise RuntimeError("لم يتم العثور على أسهم")
 
     ranked.sort(key=lambda x: x["score"], reverse=True)
 
-    best = ranked[0]
+    print(f"\n{'═'*55}")
+    print("📊 أفضل 5 أسهم:")
+    for i, r in enumerate(ranked[:5], 1):
+        s = r["stock"]
+        print(f"  {i}. {s.get('name','')[:20]:<20} ({s.get('symbol'):>4}) "
+              f"Score:{r['score']:>4} Vol:{r['volume_ratio']:.1f}x")
 
+    best       = ranked[0]
     daily_data = build_daily_json(
-        best["stock"],
-        best["score"],
-        best["reasons"],
-        best["rr"],
-        best["volume_ratio"]
+        best["stock"], best["score"],
+        best["reasons"], best["rr"], best["volume_ratio"]
     )
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(daily_data, f, ensure_ascii=False, indent=2)
 
-    print("Smart Scanner completed")
-    print(f"Selected: {daily_data['stock_name']} - {daily_data['symbol']}")
-    print(f"Score: {daily_data['score']}")
-    print(f"R:R: {daily_data['rr']}")
-    print(f"Volume Ratio: {daily_data['volume_ratio']}")
-    print(f"Source: {daily_data['source']}")
-    print(f"Note: {daily_data['note']}")
+    print(f"\n✅ السهم المختار: {daily_data['stock_name']} ({daily_data['symbol']})")
+    print(f"   السعر: {daily_data['price']} | دخول: {daily_data['entry']}")
+    print(f"   Score: {daily_data['score']} | المصدر: {daily_data['source']}")
+    print(f"   وقت التوليد: {daily_data['generated_at']}")
 
 
 if __name__ == "__main__":
