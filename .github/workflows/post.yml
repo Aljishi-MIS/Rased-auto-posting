@@ -3,10 +3,13 @@ name: TASI AI — مضارب
 on:
   workflow_dispatch:
   schedule:
+    # السوق السعودي: الأحد-الخميس 9:30ص - 3:30م KSA
     - cron: "30 6 * * 0-4"
     - cron: "0,30 7-11 * * 0-4"
     - cron: "0,30 12 * * 0-4"
-    - cron: "0 13 * * 4"
+
+    # التقرير الأسبوعي: كل خميس 3:30م KSA (12:30 UTC)
+    - cron: "30 12 * * 4"
 
 jobs:
 
@@ -120,7 +123,11 @@ jobs:
 
   weekly-report:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    # يشتغل فقط كل خميس 3:30م KSA أو يدوياً
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' &&
+       github.event.schedule == '30 12 * * 4')
 
     steps:
       - name: Checkout Repository
