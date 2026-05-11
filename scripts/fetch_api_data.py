@@ -268,6 +268,8 @@ print(f"  Time: {daily_data['generated_at']}")
 
 if src == "market_snapshot":
     print("\n  WARNING: using local snapshot — check API_KEY and API_URL")
+    import sys
+    sys.exit(1)  # يوقف الـ workflow — لا نشر من بيانات محلية
 ```
 
 if **name** == “**main**”:
