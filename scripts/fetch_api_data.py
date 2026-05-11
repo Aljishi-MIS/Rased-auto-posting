@@ -82,10 +82,17 @@ return {
     "resistance":     resistance,
     "support":        support,
     "rsi":            rsi,
+    "rs_rank":        0,
+    "rs_vs_tasi":     0,
+    "sector":         "",
 }
 ```
 
 def load_market_data():
+“””
+يجلب البيانات من API سهمك مباشرةً.
+يرجع للـ snapshot المحلي فقط إذا فشل API تماماً.
+“””
 stocks = []
 
 ```
@@ -108,6 +115,7 @@ else:
         stocks = [normalize(s) for s in all_raw if safe_float(s.get("price")) > 0]
         print(f"\n total stocks from API: {len(stocks)}")
 
+# Fallback فقط إذا API فشل كلياً
 if len(stocks) < 3:
     print("\n Fallback -> market_snapshot.json")
     with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
@@ -118,7 +126,7 @@ if len(stocks) < 3:
 return stocks
 ```
 
-def calculate_score(stock):
+def calculate_score(stock, top_sectors=None):
 price          = safe_float(stock.get(“price”))
 high           = safe_float(stock.get(“high”), price)
 low            = safe_float(stock.get(“low”),  price)
@@ -128,13 +136,17 @@ volume         = safe_float(stock.get(“volume”))
 avg_volume     = max(safe_float(stock.get(“avg_volume”)), 1)
 change_percent = safe_float(stock.get(“change_percent”))
 rsi            = safe_float(stock.get(“rsi”), 50)
+rs_rank        = safe_float(stock.get(“rs_rank”, 50))
+rs_vs_tasi     = safe_float(stock.get(“rs_vs_tasi”, 0))
+sector         = stock.get(“sector”, “”)
 
 ```
 score, reasons = 0, []
 
 if change_percent < -1:
-    return -999, ["تغير سلبي مستبعد"], 0, 0
+    return -999, ["تغير سلبي — مستبعد"], 0, 0
 
+# 1) Breakout
 if resistance > 0:
     dist = (resistance - price) / price
     if price >= resistance:
@@ -144,24 +156,29 @@ if resistance > 0:
     elif dist <= 0.03:
         score += 12; reasons.append("قريب من مقاومة")
 
+# 2) Volume Spike
 volume_ratio = volume / avg_volume
 if   volume_ratio >= 3:   score += 25; reasons.append(f"حجم {volume_ratio:.1f}x")
 elif volume_ratio >= 2:   score += 20; reasons.append(f"حجم {volume_ratio:.1f}x")
 elif volume_ratio >= 1.5: score += 10; reasons.append("زيادة سيولة")
 
+# 3) RSI
 if   50 <= rsi <= 65:  score += 20; reasons.append(f"RSI {rsi:.0f} صحي")
 elif 40 <= rsi < 50:   score += 12; reasons.append(f"RSI {rsi:.0f} بداية زخم")
 elif 65 < rsi <= 72:   score +=  8; reasons.append(f"RSI {rsi:.0f} قوي")
 elif rsi > 75:         score -= 15; reasons.append(f"RSI {rsi:.0f} تشبع شرائي")
 
+# 4) Close near high
 daily_range = high - low
 close_pos   = ((price - low) / daily_range) if daily_range > 0 else 0.5
 if   close_pos >= 0.85: score += 20; reasons.append("اغلاق عند القمة")
 elif close_pos >= 0.70: score += 12; reasons.append("تمركز ايجابي")
 
+# 5) Momentum
 if   change_percent >= 3:   score += 15; reasons.append(f"ارتفاع {change_percent:.1f}%")
 elif change_percent >= 1.5: score += 10; reasons.append(f"ارتفاع {change_percent:.1f}%")
 
+# 6) R:R
 entry     = max(price, resistance * 0.999) if resistance > price * 0.95 else price
 stop_loss = max(support, entry * 0.97)
 target1   = entry * 1.03
@@ -172,6 +189,26 @@ rr        = reward / risk if risk > 0 else 0
 if   rr >= 2.5: score += 20; reasons.append(f"R:R {rr:.1f} ممتاز")
 elif rr >= 1.5: score += 10; reasons.append(f"R:R {rr:.1f} جيد")
 else:           score -= 10; reasons.append(f"R:R {rr:.1f} ضعيف")
+
+# 7) RS Rank — CAN SLIM (L factor)
+if rs_rank >= 80:
+    score += 20; reasons.append(f"RS Rank {rs_rank:.0f} قائد السوق")
+elif rs_rank >= 60:
+    score += 10; reasons.append(f"RS Rank {rs_rank:.0f} فوق المتوسط")
+elif rs_rank > 0 and rs_rank < 40:
+    score -= 15; reasons.append(f"RS Rank {rs_rank:.0f} ضعيف")
+
+# 8) RS vs TASI
+if rs_vs_tasi >= 3:
+    score += 10; reasons.append(f"يتفوق على TASI بـ {rs_vs_tasi:.1f}%")
+elif rs_vs_tasi >= 0:
+    score += 5
+elif rs_vs_tasi < -3:
+    score -= 10; reasons.append(f"اضعف من TASI بـ {abs(rs_vs_tasi):.1f}%")
+
+# 9) Sector Rotation (I factor)
+if top_sectors and sector in top_sectors:
+    score += 15; reasons.append(f"قطاع {sector} متصدر")
 
 return score, reasons, rr, volume_ratio
 ```
@@ -210,6 +247,9 @@ return {
     "rsi":          round(safe_float(stock.get("rsi")), 1),
     "rr":           round(rr, 2),
     "volume_ratio": round(volume_ratio, 2),
+    "rs_rank":      stock.get("rs_rank", 0),
+    "rs_vs_tasi":   stock.get("rs_vs_tasi", 0),
+    "sector":       stock.get("sector", ""),
     "source":       "sahmk_api" if from_api else "market_snapshot",
     "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
     "note":         f"قراءة فنية تعليمية: {' + '.join(reasons[:3])}."
@@ -217,14 +257,44 @@ return {
 ```
 
 def main():
-stocks = load_market_data()
+# ── 1. تشغيل Market Intelligence ─────────────────────
+intel       = {}
+intel_map   = {}
+top_sectors = []
 
 ```
+try:
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from market_intelligence import run as run_intel
+    intel       = run_intel() or {}
+    top_sectors = intel.get("top_sectors", [])
+    # خريطة: symbol -> بيانات CAN SLIM
+    for s in intel.get("top_stocks", []):
+        intel_map[s["symbol"]] = s
+    print(f"\n Market Intelligence: {len(intel_map)} سهم محلل")
+    print(f" Top Sectors: {', '.join(top_sectors)}")
+except Exception as e:
+    print(f"\n Market Intelligence error: {e}")
+
+# ── 2. جلب البيانات من API ────────────────────────────
+stocks = load_market_data()
+
+# ── 3. دمج بيانات CAN SLIM مع بيانات API ─────────────
+for stock in stocks:
+    sym = str(stock.get("symbol", ""))
+    if sym in intel_map:
+        # إضافة RS Rank والقطاع من Market Intelligence
+        stock["rs_rank"]    = intel_map[sym].get("rs_rank", 0)
+        stock["rs_vs_tasi"] = intel_map[sym].get("rs_vs_tasi", 0)
+        stock["sector"]     = intel_map[sym].get("sector", "")
+
+# ── 4. تقييم وترتيب ──────────────────────────────────
 ranked = []
 for stock in stocks:
     if safe_float(stock.get("price")) <= 0 or safe_float(stock.get("volume")) <= 0:
         continue
-    score, reasons, rr, vol_ratio = calculate_score(stock)
+    score, reasons, rr, vol_ratio = calculate_score(stock, top_sectors)
     if score > 0:
         ranked.append({
             "score": score, "stock": stock,
@@ -233,7 +303,7 @@ for stock in stocks:
 
 if not ranked:
     for stock in stocks:
-        score, reasons, rr, vol_ratio = calculate_score(stock)
+        score, reasons, rr, vol_ratio = calculate_score(stock, top_sectors)
         ranked.append({
             "score": score, "stock": stock,
             "reasons": reasons, "rr": rr, "volume_ratio": vol_ratio
@@ -244,12 +314,14 @@ if not ranked:
 
 ranked.sort(key=lambda x: x["score"], reverse=True)
 
-print(f"\n{'='*55}")
+print(f"\n{'='*60}")
 print("Top 5 Stocks:")
 for i, r in enumerate(ranked[:5], 1):
     s = r["stock"]
+    rs = s.get("rs_rank", 0)
+    sec = s.get("sector", "")
     print(f"  {i}. {s.get('name','')[:20]:<20} ({s.get('symbol'):>4}) "
-          f"Score:{r['score']:>4} Vol:{r['volume_ratio']:.1f}x")
+          f"Score:{r['score']:>4} RS:{rs:>3} {sec}")
 
 best       = ranked[0]
 daily_data = build_daily_json(
@@ -263,8 +335,8 @@ with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
 src = daily_data["source"]
 print(f"\n Selected: {daily_data['stock_name']} ({daily_data['symbol']})")
 print(f"  Price: {daily_data['price']} | Entry: {daily_data['entry']}")
-print(f"  Score: {daily_data['score']} | Source: {src}")
-print(f"  Time: {daily_data['generated_at']}")
+print(f"  Score: {daily_data['score']} | RS Rank: {daily_data['rs_rank']}")
+print(f"  Source: {src} | Time: {daily_data['generated_at']}")
 
 if src == "market_snapshot":
     print("\n  WARNING: using local snapshot — check API_KEY and API_URL")
