@@ -3,11 +3,7 @@ name: TASI AI — مضارب
 on:
   workflow_dispatch:
   schedule:
-    # السوق السعودي: الأحد-الخميس 9:30ص - 3:30م KSA
-    # كل 5 دقائق (الحد الأدنى في GitHub Actions)
     - cron: "*/5 7-12 * * 0-4"
-
-    # التقرير الأسبوعي: كل خميس 3:30م KSA (12:30 UTC)
     - cron: "30 12 * * 4"
 
 jobs:
@@ -44,27 +40,34 @@ jobs:
         run: python scripts/fetch_api_data.py
 
       - name: Check Signal Quality
+        id: quality_check
         run: python scripts/should_post.py
+        continue-on-error: true
 
       - name: Generate Post Image
+        if: steps.quality_check.outcome == 'success'
         run: python scripts/generate_post.py
 
       - name: Log Signal
+        if: steps.quality_check.outcome == 'success'
         run: python scripts/log_signal.py
         continue-on-error: true
 
       - name: Upload output.png to GitHub
+        if: steps.quality_check.outcome == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/upload_output.py
 
       - name: Post to Telegram
+        if: steps.quality_check.outcome == 'success'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scripts/post_to_telegram.py
 
       - name: Post to Facebook
+        if: steps.quality_check.outcome == 'success'
         env:
           FB_PAGE_ID:    ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
@@ -73,6 +76,7 @@ jobs:
         continue-on-error: true
 
       - name: Post to Instagram
+        if: steps.quality_check.outcome == 'success'
         env:
           FB_PAGE_ID:    ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
@@ -81,6 +85,7 @@ jobs:
         continue-on-error: true
 
       - name: Commit Signal Log
+        if: steps.quality_check.outcome == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
