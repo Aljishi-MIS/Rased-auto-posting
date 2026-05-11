@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
   schedule:
     # السوق السعودي: الأحد-الخميس 9:30ص - 3:30م KSA
-    - cron: "30 6 * * 0-4"
-    - cron: "0,30 7-11 * * 0-4"
-    - cron: "0,30 12 * * 0-4"
+    # كل 5 دقائق (الحد الأدنى في GitHub Actions)
+    - cron: "*/5 7-12 * * 0-4"
 
     # التقرير الأسبوعي: كل خميس 3:30م KSA (12:30 UTC)
     - cron: "30 12 * * 4"
@@ -30,6 +29,13 @@ jobs:
 
       - name: Install Requirements
         run: pip install -r requirements.txt
+
+      - name: Golden Signal Analysis
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          API_URL: ${{ secrets.API_URL }}
+        run: python scripts/historical_analyzer.py
+        continue-on-error: true
 
       - name: Fetch & Analyze Market Data
         env:
@@ -123,7 +129,6 @@ jobs:
 
   weekly-report:
     runs-on: ubuntu-latest
-    # يشتغل فقط كل خميس 3:30م KSA أو يدوياً
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'schedule' &&
