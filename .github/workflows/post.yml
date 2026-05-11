@@ -38,6 +38,7 @@ jobs:
           API_KEY: ${{ secrets.API_KEY }}
           API_URL: ${{ secrets.API_URL }}
         run: python scripts/fetch_api_data.py
+        continue-on-error: true
 
       - name: Check Signal Quality
         id: quality_check
@@ -47,6 +48,7 @@ jobs:
       - name: Generate Post Image
         if: steps.quality_check.outcome == 'success'
         run: python scripts/generate_post.py
+        continue-on-error: true
 
       - name: Log Signal
         if: steps.quality_check.outcome == 'success'
@@ -58,6 +60,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/upload_output.py
+        continue-on-error: true
 
       - name: Post to Telegram
         if: steps.quality_check.outcome == 'success'
@@ -65,6 +68,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scripts/post_to_telegram.py
+        continue-on-error: true
 
       - name: Post to Facebook
         if: steps.quality_check.outcome == 'success'
@@ -150,11 +154,13 @@ jobs:
 
       - name: Install Requirements
         run: pip install -r requirements.txt
+        continue-on-error: true
 
       - name: Generate Weekly Report
         run: |
           python scripts/weekly_report.py
           python scripts/generate_report_image.py
+        continue-on-error: true
 
       - name: Send Report to Telegram
         env:
