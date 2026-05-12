@@ -28,26 +28,39 @@ def tr(draw,x,y,text,font,color):
 def tl(draw,x,y,text,font,color):
     draw.text((x,y),str(text),fill=color,font=font,anchor="lm",direction="rtl",language="ar")
 
-# ── وقت الإشارة بتوقيت KSA ─────────────────────────────────
+# وقت KSA
 KSA = timezone(timedelta(hours=3))
 now = datetime.now(KSA)
-
 gen_at = data.get("generated_at", "")
-if gen_at:
-    try:
-        dt = datetime.strptime(gen_at, "%Y-%m-%d %H:%M")
-        signal_date = dt.strftime("%Y/%m/%d")
-        signal_time = dt.strftime("%I:%M %p")
-    except:
-        signal_date = now.strftime("%Y/%m/%d")
-        signal_time = now.strftime("%I:%M %p")
-else:
+try:
+    dt = datetime.strptime(gen_at, "%Y-%m-%d %H:%M")
+    signal_date = dt.strftime("%Y/%m/%d")
+    signal_time = dt.strftime("%I:%M %p").replace("AM","ص").replace("PM","م")
+except:
     signal_date = now.strftime("%Y/%m/%d")
-    signal_time = now.strftime("%I:%M %p")
+    signal_time = now.strftime("%I:%M %p").replace("AM","ص").replace("PM","م")
 
-signal_time = signal_time.replace("AM","ص").replace("PM","م")
+# حساب النسب
+def pct(entry, price):
+    try:
+        e = float(entry)
+        p = float(price)
+        if e > 0:
+            return f"{((p - e) / e * 100):+.1f}%"
+    except:
+        pass
+    return ""
 
-# ── canvas ──────────────────────────────────────────────────
+entry   = data.get("entry",    "0")
+target1 = data.get("target1",  "0")
+target2 = data.get("target2",  "0")
+stop    = data.get("stop_loss","0")
+
+pct_t1   = pct(entry, target1)
+pct_t2   = pct(entry, target2)
+pct_stop = pct(entry, stop)
+
+# canvas
 img  = Image.new("RGB",(W,H),BG)
 draw = ImageDraw.Draw(img)
 
@@ -57,31 +70,18 @@ glow = glow.filter(ImageFilter.GaussianBlur(75))
 img  = Image.alpha_composite(img.convert("RGBA"),glow).convert("RGB")
 draw = ImageDraw.Draw(img)
 
-# ── إطار ────────────────────────────────────────────────────
+# اطار
 draw.rounded_rectangle((55,38,W-55,H-38),radius=46,fill=CARD,outline=BORDER,width=3)
 
-# ── شريط التاريخ والوقت ─────────────────────────────────────
+# شريط التاريخ
 draw.rounded_rectangle((55,38,W-55,104),radius=46,fill="#060F1C")
 draw.line([(75,104),(W-75,104)],fill=BORDER,width=1)
-
-# أيقونة تقويم + التاريخ — يمين
-draw.text((W-95,71),"📅",font=F(22),anchor="mm")
-draw.text((W-125,71),signal_date,
-    fill=GOLD,font=FB(24),anchor="rm",direction="ltr")
-
-# فاصل عمودي
+draw.text((W-125,71),signal_date,fill=GOLD,font=FB(24),anchor="rm",direction="ltr")
 draw.line([(W//2+10,52),(W//2+10,90)],fill=BORDER,width=1)
+draw.text((125,71),signal_time,fill="#22C55E",font=FB(24),anchor="lm",direction="ltr")
+draw.text((W//2-20,71),"وقت الاشارة",fill=SILVER,font=FR(20),anchor="mm",direction="rtl",language="ar")
 
-# أيقونة ساعة + الوقت — يسار
-draw.text((95,71),"🕐",font=F(22),anchor="mm")
-draw.text((125,71),signal_time,
-    fill=GREEN,font=FB(24),anchor="lm",direction="ltr")
-
-# نص وسط
-draw.text((W//2-20,71),"وقت الإشارة",
-    fill=SILVER,font=FR(20),anchor="mm",direction="rtl",language="ar")
-
-# ── لوغو ────────────────────────────────────────────────────
+# لوغو
 LS=100; LX=W//2-LS//2; LY=116
 try:
     logo=Image.open("assets/logo.png").convert("RGBA")
@@ -94,11 +94,9 @@ try:
 except:
     pass
 
-# ── عنوان ───────────────────────────────────────────────────
 tc(draw,W//2,256,"مضارب",F(64),GOLD)
-tc(draw,W//2,310,"تحليل فني وتعليمي لسوق الأسهم السعودية",FR(27),WHITE)
+tc(draw,W//2,310,"تحليل فني وتعليمي لسوق الاسهم السعودية",FR(27),WHITE)
 
-# ── فاصل ────────────────────────────────────────────────────
 def divider(y):
     draw.line([(240,y),(W//2-12,y)],fill=BORDER,width=2)
     draw.line([(W//2+12,y),(W-240,y)],fill=BORDER,width=2)
@@ -106,28 +104,28 @@ def divider(y):
 
 divider(350)
 
-# ── اسم السهم ───────────────────────────────────────────────
 sn=data.get("stock_name",""); sym=data.get("symbol","")
 tc(draw,W//2,406,f"{sn} - {sym}",F(56),WHITE)
 
 divider(454)
 
-# ── صفوف البيانات ───────────────────────────────────────────
-rows=[
-    ("السعر الحالي:",data.get("price",""),    WHITE,"price"),
-    ("نقطة الدخول:", data.get("entry",""),    GOLD, "entry"),
-    ("الهدف الأول:", data.get("target1",""),  GREEN,"target"),
-    ("الهدف الثاني:",data.get("target2",""),  GREEN,"target"),
-    ("وقف الخسارة:", data.get("stop_loss",""),RED,  "stop"),
+# صفوف البيانات مع النسب
+rows = [
+    ("السعر الحالي:", data.get("price",""),  "",       WHITE, "price"),
+    ("نقطة الدخول:", entry,                  "",       GOLD,  "entry"),
+    ("الهدف الاول:", target1,                pct_t1,   GREEN, "target"),
+    ("الهدف الثاني:",target2,                pct_t2,   GREEN, "target"),
+    ("وقف الخسارة:", stop,                   pct_stop, RED,   "stop"),
 ]
 
 y0=472; RH=76; MX=95
 
-for i,(label,value,color,kind) in enumerate(rows):
+for i,(label,value,percent,color,kind) in enumerate(rows):
     y=y0+i*RH; yc=y+RH//2
     draw.rounded_rectangle((MX,y+4,W-MX,y+RH-4),radius=20,fill=ROW,outline="#2A3F55",width=2)
     ix=W-MX-40
     draw.ellipse((ix-24,yc-24,ix+24,yc+24),outline=color,width=3)
+
     if kind=="price":
         for bx,bh in [(-10,6),(0,13),(10,20)]:
             draw.rectangle((ix+bx,yc+12-bh,ix+bx+7,yc+12),fill=WHITE)
@@ -140,23 +138,32 @@ for i,(label,value,color,kind) in enumerate(rows):
         draw.polygon(pts,outline=color)
         draw.line([(ix-7,yc-7),(ix+7,yc+7)],fill=color,width=4)
         draw.line([(ix+7,yc-7),(ix-7,yc+7)],fill=color,width=4)
-    tr(draw,ix-34,yc,label,F(29),color)
-    tl(draw,MX+26,yc,f"{value} ريال",F(31),color)
 
-# ── صندوق الملاحظة ──────────────────────────────────────────
+    tr(draw,ix-34,yc,label,F(29),color)
+
+    # القيمة + النسبة
+    if percent:
+        val_text = f"{value} ريال"
+        pct_text = f"({percent})"
+        tl(draw,MX+26,yc-10,val_text,F(28),color)
+        tl(draw,MX+26,yc+14,pct_text,FB(22),color)
+    else:
+        tl(draw,MX+26,yc,f"{value} ريال",F(31),color)
+
+# ملاحظة
 note_y=y0+len(rows)*RH+14
 note=data.get("note","قراءة فنية تعليمية لسهم قريب من منطقة مقاومة مع متابعة السيولة.")
 draw.rounded_rectangle((MX-10,note_y,W-MX+10,note_y+62),radius=18,fill="#07111E",outline=BORDER,width=2)
 tc(draw,W//2,note_y+31,note,FR(21),MUTED)
 
-# ── فوتر ────────────────────────────────────────────────────
+# فوتر
 div_y=note_y+84
 divider(div_y)
-tc(draw,W//2,div_y+26,"محتوى تعليمي وتحليلي فقط — لا يُعد توصية استثمارية",FR(21),MUTED)
+tc(draw,W//2,div_y+26,"محتوى تعليمي وتحليلي فقط - لا يعد توصية استثمارية",FR(21),MUTED)
 
 pill_y=div_y+56; pw=290
 draw.rounded_rectangle((W//2-pw//2,pill_y-20,W//2+pw//2,pill_y+20),radius=20,fill=CARD,outline=BORDER,width=2)
 draw.text((W//2,pill_y),"t.me/TASI_Smart",fill=GOLD,font=F(24),anchor="mm",direction="ltr")
 
 img.save("output.png",quality=97)
-print(f"✅ Post generated — {signal_date} {signal_time}")
+print("Post generated successfully.")
