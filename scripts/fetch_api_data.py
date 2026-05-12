@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 API_KEY  = os.environ.get("API_KEY")
 API_URL  = os.environ.get("API_URL", "https://app.sahmk.sa/api/v1")
@@ -43,6 +43,19 @@ def safe_float(value, default=0.0):
         return float(value)
     except Exception:
         return default
+
+
+def is_market_open():
+    KSA     = timezone(timedelta(hours=3))
+    now     = datetime.now(KSA)
+    weekday = now.weekday()
+    t       = now.hour * 60 + now.minute
+
+    market_days  = [6, 0, 1, 2, 3]
+    market_open  = 9 * 60 + 30
+    market_close = 15 * 60 + 30
+
+    return weekday in market_days and market_open <= t <= market_close
 
 
 def get(endpoint, params=None):
@@ -273,13 +286,21 @@ def build_daily_json(stock, score, reasons, rr, volume_ratio):
 
 
 def main():
+    import sys
+
+    # فحص وقت السوق
+    if not is_market_open():
+        print("السوق مغلق الان - لا يتم النشر")
+        sys.exit(1)
+
+    # Market Intelligence
     intel       = {}
     intel_map   = {}
     top_sectors = []
 
     try:
-        import sys, os
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import os as _os
+        sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
         from market_intelligence import run as run_intel
         intel       = run_intel() or {}
         top_sectors = intel.get("top_sectors", [])
@@ -345,7 +366,6 @@ def main():
 
     if src == "market_snapshot":
         print("\n  WARNING: using local snapshot")
-        import sys
         sys.exit(1)
 
 
