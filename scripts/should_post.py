@@ -6,8 +6,8 @@ DATA_FILE = "data/daily.json"
 MIN_SCORE          = 75
 RSI_MIN            = 45
 RSI_MAX            = 70
-MIN_VOLUME_RATIO   = 1.8
-MIN_VOLUME_HIGH_RR = 1.3
+MIN_VOLUME_RATIO   = 1.3
+MIN_VOLUME_HIGH_RR = 1.1
 
 
 def check(data):
@@ -18,17 +18,13 @@ def check(data):
     symbol       = data.get("symbol", "")
     name         = data.get("stock_name", "")
 
-    # اذا R:R >= 3 نقبل حجم اقل
     vol_threshold = MIN_VOLUME_HIGH_RR if rr >= 3 else MIN_VOLUME_RATIO
 
     reasons_fail = []
-
     if score < MIN_SCORE:
         reasons_fail.append(f"Score {score} < {MIN_SCORE}")
-
     if not (RSI_MIN <= rsi <= RSI_MAX):
         reasons_fail.append(f"RSI {rsi:.0f} خارج النطاق ({RSI_MIN}-{RSI_MAX})")
-
     if volume_ratio < vol_threshold:
         reasons_fail.append(f"Volume {volume_ratio:.1f}x < {vol_threshold}x")
 
@@ -41,7 +37,7 @@ def check(data):
     print(f"  R:R          : {rr:>6.1f}  (معلوماتي فقط)")
 
     if rr >= 3:
-        print(f"  ** R:R ممتاز — تم تخفيف معيار الحجم الى {MIN_VOLUME_HIGH_RR}x")
+        print(f"  ** R:R ممتاز -- تم تخفيف معيار الحجم الى {MIN_VOLUME_HIGH_RR}x")
 
     if reasons_fail:
         print(f"\nالاشارة لا تستوفي المعايير:")
