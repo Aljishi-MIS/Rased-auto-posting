@@ -1,15 +1,13 @@
 import json
 import sys
-import os
-from datetime import datetime, date
 
 DATA_FILE = "data/daily.json"
-LOG_FILE  = "data/signals_log.csv"
 
-MIN_SCORE        = 75
-RSI_MIN          = 45
-RSI_MAX          = 70
-MIN_VOLUME_RATIO = 1.8
+MIN_SCORE          = 75
+RSI_MIN            = 45
+RSI_MAX            = 70
+MIN_VOLUME_RATIO   = 1.8
+MIN_VOLUME_HIGH_RR = 1.3
 
 
 def check(data):
@@ -20,22 +18,30 @@ def check(data):
     symbol       = data.get("symbol", "")
     name         = data.get("stock_name", "")
 
+    # اذا R:R >= 3 نقبل حجم اقل
+    vol_threshold = MIN_VOLUME_HIGH_RR if rr >= 3 else MIN_VOLUME_RATIO
+
     reasons_fail = []
 
     if score < MIN_SCORE:
         reasons_fail.append(f"Score {score} < {MIN_SCORE}")
+
     if not (RSI_MIN <= rsi <= RSI_MAX):
         reasons_fail.append(f"RSI {rsi:.0f} خارج النطاق ({RSI_MIN}-{RSI_MAX})")
-    if volume_ratio < MIN_VOLUME_RATIO:
-        reasons_fail.append(f"Volume {volume_ratio:.1f}x < {MIN_VOLUME_RATIO}x")
+
+    if volume_ratio < vol_threshold:
+        reasons_fail.append(f"Volume {volume_ratio:.1f}x < {vol_threshold}x")
 
     print(f"\n{'='*55}")
     print(f"فحص جودة الاشارة: {name} ({symbol})")
     print(f"{'='*55}")
-    print(f"  Score        : {score:>6}  {'OK' if score >= MIN_SCORE else 'X'} (min {MIN_SCORE})")
-    print(f"  RSI          : {rsi:>6.0f}  {'OK' if RSI_MIN <= rsi <= RSI_MAX else 'X'} ({RSI_MIN}-{RSI_MAX})")
-    print(f"  Volume Ratio : {volume_ratio:>6.1f}x {'OK' if volume_ratio >= MIN_VOLUME_RATIO else 'X'} (min {MIN_VOLUME_RATIO}x)")
+    print(f"  Score        : {score:>6}  {'OK' if score >= MIN_SCORE else 'X':>3} (min {MIN_SCORE})")
+    print(f"  RSI          : {rsi:>6.0f}  {'OK' if RSI_MIN <= rsi <= RSI_MAX else 'X':>3} ({RSI_MIN}-{RSI_MAX})")
+    print(f"  Volume Ratio : {volume_ratio:>5.1f}x  {'OK' if volume_ratio >= vol_threshold else 'X':>3} (min {vol_threshold}x)")
     print(f"  R:R          : {rr:>6.1f}  (معلوماتي فقط)")
+
+    if rr >= 3:
+        print(f"  ** R:R ممتاز — تم تخفيف معيار الحجم الى {MIN_VOLUME_HIGH_RR}x")
 
     if reasons_fail:
         print(f"\nالاشارة لا تستوفي المعايير:")
