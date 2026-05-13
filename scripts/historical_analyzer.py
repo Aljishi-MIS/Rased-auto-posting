@@ -9,11 +9,45 @@ HEADERS  = {"X-API-Key": API_KEY} if API_KEY else {}
 
 OUTPUT_FILE  = "data/daily.json"
 GOLDEN_FILE  = "data/golden_signal.json"
+INTEL_FILE   = "data/market_intel.json"
 
 GOLDEN_SCORE_MIN = 75
 MIN_HISTORY_DAYS = 10
 
 KSA = timezone(timedelta(hours=3))
+
+SECTORS = {
+    "البنوك":         ["1010","1020","1030","1050","1060","1080","1120","1150"],
+    "البتروكيماويات": ["2010","2020","2060","2090","2100","2150","2160","2170",
+                      "2222","2223","2230"],
+    "الاتصالات":      ["7010","7020","7030","7040","7203","7204"],
+    "الطاقة":         ["5110","2040","2050"],
+    "التجزئة":        ["4190","4200","4210","4220","4230","4240","4250","4261"],
+    "العقار":         ["4020","4031","4040","4050","4100","4150","4300","4320",
+                      "4321","4322","4323","4324"],
+    "الصحة":          ["4002","4005","4007","4009","4013","4017","4019","4061"],
+    "الصناعة":        ["1211","1212","2030","2080","2082","2083","2110","2120",
+                      "2130","2140","2180","2190","2200","2210","2220","2240",
+                      "2250","2290","2310","2320","2330","2340","2350","2360",
+                      "2370","2380","2381","2382"],
+    "التامين":        ["8010","8020","8030","8040","8050","8060","8070","8100",
+                      "8120","8150","8160","8170","8180","8190","8200","8210",
+                      "8230","8240","8250","8260","8270","8280","8300","8310",
+                      "8311","8320","8330","8340"],
+    "الاستثمار":      ["1111","4280","4290","4310","4349","4330","4331","4332",
+                      "4333","4334","4335","4336","4337","4338","4339","4340",
+                      "4341","4342","4344","4345","4346","4347","4348"],
+    "التقنية":        ["9516","9526","9527","9528","9529","9536","9543","9544",
+                      "9545","9546","9547","9548","9549","9553","9554","9555",
+                      "9556","9557","9558","9559","9560","9561","9562","9563",
+                      "9564","9565","9566","9567","9568"],
+    "الغذاء":         ["2060","2070","6001","6002","6010","6013","6014","6015",
+                      "6020","6040","6050","6060","6070"],
+    "التعليم":        ["4001","4003","4004","4006","4008","4010","4011","4012",
+                      "4014","4015","4016","4018","4021"],
+    "الترفيه":        ["4160","4161","4162","4163","4164","4170","4180"],
+    "النقل":          ["1301","1302","1303","1304","1320","1321","5010","5020"],
+}
 
 
 def safe_float(v, default=0.0):
@@ -21,6 +55,25 @@ def safe_float(v, default=0.0):
         return float(v)
     except Exception:
         return default
+
+
+def get_sector(symbol):
+    for sector_name, symbols in SECTORS.items():
+        if str(symbol) in symbols:
+            return sector_name
+    return "اخرى"
+
+
+def get_rs_rank_from_intel(symbol):
+    try:
+        with open(INTEL_FILE, "r", encoding="utf-8") as f:
+            intel = json.load(f)
+        for s in intel.get("top_stocks", []):
+            if str(s.get("symbol","")) == str(symbol):
+                return s.get("rs_rank", 0)
+    except Exception:
+        pass
+    return 0
 
 
 def get(endpoint, params=None):
@@ -268,9 +321,13 @@ def calc_golden_score(stock, hist):
 
 def build_signal(stock, hist, score, signals, rsi,
                  resistance, support, atr, vol_ratio):
-    price = safe_float(stock.get("price") or stock.get("close"))
-    sym   = str(stock.get("symbol",""))
-    name  = stock.get("name") or stock.get("name_ar") or sym
+    price  = safe_float(stock.get("price") or stock.get("close"))
+    sym    = str(stock.get("symbol",""))
+    name   = stock.get("name") or stock.get("name_ar") or sym
+    sector = get_sector(sym)
+
+    # RS Rank من market_intel.json
+    rs_rank = get_rs_rank_from_intel(sym)
 
     entry = round(price * 1.001, 2)
 
@@ -322,6 +379,8 @@ def build_signal(stock, hist, score, signals, rsi,
         "resistance":   round(resistance, 2),
         "support":      round(support, 2),
         "atr":          round(atr, 4),
+        "rs_rank":      rs_rank,
+        "sector":       sector,
         "source":       "historical_analysis",
         "generated_at": now.strftime("%Y-%m-%d %H:%M"),
         "signals":      signals,
@@ -342,6 +401,17 @@ def main():
 
     now = datetime.now(KSA)
     print(f"  الوقت: {now.strftime('%H:%M')} KSA")
+
+    # تشغيل market_intelligence اولاً لتوفير RS Rank
+    print("\n  تشغيل Market Intelligence...")
+    try:
+        import sys as _sys, os as _os
+        _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+        from market_intelligence import run as run_intel
+        run_intel()
+        print("  Market Intelligence جاهز")
+    except Exception as e:
+        print(f"  Market Intelligence error: {e}")
 
     candidates = fetch_candidates()
     if not candidates:
@@ -408,12 +478,14 @@ def main():
         json.dump(signal, f, ensure_ascii=False, indent=2)
 
     print(f"الاشارة الذهبية:")
-    print(f"  السهم  : {signal['stock_name']} ({signal['symbol']})")
-    print(f"  دخول   : {signal['entry']}")
-    print(f"  هدف1   : {signal['target1']} ({round((float(signal['target1'])-float(signal['entry']))/float(signal['entry'])*100,1)}%)")
-    print(f"  هدف2   : {signal['target2']} ({round((float(signal['target2'])-float(signal['entry']))/float(signal['entry'])*100,1)}%)")
-    print(f"  وقف    : {signal['stop_loss']} ({round((float(signal['stop_loss'])-float(signal['entry']))/float(signal['entry'])*100,1)}%)")
-    print(f"  R:R    : {signal['rr']} | Score: {signal['score']}")
+    print(f"  السهم   : {signal['stock_name']} ({signal['symbol']})")
+    print(f"  القطاع  : {signal['sector']}")
+    print(f"  RS Rank : {signal['rs_rank']}")
+    print(f"  دخول    : {signal['entry']}")
+    print(f"  هدف1    : {signal['target1']} ({round((float(signal['target1'])-float(signal['entry']))/float(signal['entry'])*100,1)}%)")
+    print(f"  هدف2    : {signal['target2']} ({round((float(signal['target2'])-float(signal['entry']))/float(signal['entry'])*100,1)}%)")
+    print(f"  وقف     : {signal['stop_loss']} ({round((float(signal['stop_loss'])-float(signal['entry']))/float(signal['entry'])*100,1)}%)")
+    print(f"  R:R     : {signal['rr']} | Score: {signal['score']}")
 
 
 if __name__ == "__main__":
