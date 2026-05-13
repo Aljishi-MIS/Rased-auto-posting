@@ -10,9 +10,10 @@ HEADERS  = {"X-API-Key": API_KEY} if API_KEY else {}
 OUTPUT_FILE  = "data/daily.json"
 GOLDEN_FILE  = "data/golden_signal.json"
 
-# معايير الاشارة الذهبية
-GOLDEN_SCORE_MIN = 80
+GOLDEN_SCORE_MIN = 75
 MIN_HISTORY_DAYS = 10
+
+KSA = timezone(timedelta(hours=3))
 
 
 def safe_float(v, default=0.0):
@@ -37,17 +38,30 @@ def get(endpoint, params=None):
     return None
 
 
+def is_pre_market():
+    now = datetime.now(KSA)
+    if now.weekday() not in [6, 0, 1, 2, 3]:
+        return False
+    t = now.hour * 60 + now.minute
+    return 5*60+30 <= t <= 6*60+0
+
+
+def is_market_hours():
+    now = datetime.now(KSA)
+    if now.weekday() not in [6, 0, 1, 2, 3]:
+        return False
+    t = now.hour * 60 + now.minute
+    return 9*60+30 <= t <= 15*60+30
+
+
 def fetch_historical(symbol, period=20):
     data = get(f"/historical/{symbol}/", {"period": period})
     if not data:
         return None
-
     history = data.get("data", [])
     if len(history) < MIN_HISTORY_DAYS:
         return None
-
     history = sorted(history, key=lambda x: x.get("date",""))
-
     return {
         "opens":   [safe_float(d.get("open"))   for d in history],
         "closes":  [safe_float(d.get("close"))  for d in history],
@@ -68,7 +82,6 @@ def fetch_candidates():
         gainers = data_g if isinstance(data_g, list) else data_g.get("gainers", data_g.get("data",[]))
     if data_v:
         volume  = data_v if isinstance(data_v, list) else data_v.get("stocks",  data_v.get("data",[]))
-
     seen, stocks = set(), []
     for s in gainers + volume:
         sym = str(s.get("symbol",""))
@@ -77,10 +90,6 @@ def fetch_candidates():
             stocks.append(s)
     return stocks
 
-
-# ══════════════════════════════════════════════
-# المؤشرات الفنية الحقيقية
-# ══════════════════════════════════════════════
 
 def calc_rsi(closes, period=14):
     if len(closes) < period + 1:
@@ -143,31 +152,21 @@ def calc_bollinger(closes, period=20, mult=2):
 def find_support_resistance(highs, lows, closes, lookback=20):
     if len(highs) < 5:
         return closes[-1] * 1.03, closes[-1] * 0.97
-
     recent_highs = highs[-lookback:]
     recent_lows  = lows[-lookback:]
     price        = closes[-1]
-
-    # مستويات المقاومة — القمم
-    resistances = []
+    resistances  = []
     for i in range(1, len(recent_highs)-1):
         if recent_highs[i] >= recent_highs[i-1] and recent_highs[i] >= recent_highs[i+1]:
             resistances.append(recent_highs[i])
-
-    # مستويات الدعم — القيعان
     supports = []
     for i in range(1, len(recent_lows)-1):
         if recent_lows[i] <= recent_lows[i-1] and recent_lows[i] <= recent_lows[i+1]:
             supports.append(recent_lows[i])
-
-    # اقرب مقاومة فوق السعر
-    above = [r for r in resistances if r > price * 1.002]
+    above      = [r for r in resistances if r > price * 1.002]
     resistance = min(above) if above else max(recent_highs)
-
-    # اقرب دعم تحت السعر
-    below = [s for s in supports if s < price * 0.998]
-    support = max(below) if below else min(recent_lows)
-
+    below      = [s for s in supports if s < price * 0.998]
+    support    = max(below) if below else min(recent_lows)
     return round(resistance, 4), round(support, 4)
 
 
@@ -176,9 +175,9 @@ def calc_volume_trend(volumes, days=5):
         return 1.0, False
     recent   = volumes[-days:]
     baseline = volumes[-(days*2):-days]
-    avg_r = sum(recent)   / len(recent)
-    avg_b = sum(baseline) / len(baseline) if baseline else 1
-    ratio = avg_r / avg_b if avg_b > 0 else 1
+    avg_r    = sum(recent)   / len(recent)
+    avg_b    = sum(baseline) / len(baseline) if baseline else 1
+    ratio    = avg_r / avg_b if avg_b > 0 else 1
     is_gradual = all(
         recent[i] >= recent[i-1] * 0.8
         for i in range(1, len(recent))
@@ -209,15 +208,11 @@ def calc_bb_squeeze(closes, period=20):
         current_widths.append(w)
     if len(current_widths) < 2:
         return False, 1.0
-    avg_width = sum(current_widths) / len(current_widths)
+    avg_width  = sum(current_widths) / len(current_widths)
     curr_width = current_widths[-1]
-    ratio = curr_width / avg_width if avg_width > 0 else 1
+    ratio      = curr_width / avg_width if avg_width > 0 else 1
     return ratio <= 0.7, round(ratio, 3)
 
-
-# ══════════════════════════════════════════════
-# حساب الـ Golden Score
-# ══════════════════════════════════════════════
 
 def calc_golden_score(stock, hist):
     closes  = hist["closes"]
@@ -229,7 +224,6 @@ def calc_golden_score(stock, hist):
     score   = 0
     signals = []
 
-    # 1. RSI حقيقي
     rsi = calc_rsi(closes)
     if 45 <= rsi <= 65:
         score += 20; signals.append(f"RSI {rsi:.0f} في المنطقة الذهبية")
@@ -238,34 +232,30 @@ def calc_golden_score(stock, hist):
     elif rsi > 75:
         score -= 20; signals.append(f"RSI {rsi:.0f} تشبع شرائي")
 
-    # 2. EMA Trend
     ema20 = calc_ema(closes, 20)
     ema50 = calc_ema(closes, min(50, len(closes)))
     if price > ema20 > ema50:
         score += 15; signals.append("السعر فوق EMA20 و EMA50")
     elif price > ema20:
-        score += 8;  signals.append("السعر فوق EMA20")
+        score +=  8; signals.append("السعر فوق EMA20")
     elif price < ema20:
         score -= 10
 
-    # 3. Bollinger Squeeze
     is_squeeze, squeeze_ratio = calc_bb_squeeze(closes)
     if is_squeeze:
-        score += 20; signals.append(f"ضغط بولينجر شديد ({squeeze_ratio:.2f}) انفجار وشيك")
+        score += 20; signals.append(f"ضغط بولينجر ({squeeze_ratio:.2f}) انفجار وشيك")
     elif squeeze_ratio <= 0.85:
         score += 10; signals.append("بداية ضغط بولينجر")
 
-    # 4. ATR منخفض (امان)
     atr     = calc_atr(highs, lows, closes)
     atr_pct = (atr / price * 100) if price > 0 else 999
     if atr_pct < 2:
         score += 15; signals.append(f"تذبذب منخفض ATR {atr_pct:.1f}%")
     elif atr_pct < 3:
-        score += 8;  signals.append(f"تذبذب معتدل ATR {atr_pct:.1f}%")
+        score +=  8; signals.append(f"تذبذب معتدل ATR {atr_pct:.1f}%")
     elif atr_pct > 5:
         score -= 10; signals.append(f"تذبذب عالٍ ATR {atr_pct:.1f}%")
 
-    # 5. Support & Resistance حقيقية
     resistance, support = find_support_resistance(highs, lows, closes)
     if resistance > 0:
         dist = (resistance - price) / price * 100
@@ -276,26 +266,18 @@ def calc_golden_score(stock, hist):
         elif dist <= 3:
             score += 10; signals.append(f"قريب من مقاومة ({dist:.1f}%)")
 
-    # 6. تراكم الحجم
     vol_ratio, is_gradual = calc_volume_trend(volumes)
     if vol_ratio >= 2 and is_gradual:
         score += 20; signals.append(f"تراكم حجم تدريجي {vol_ratio:.1f}x")
     elif vol_ratio >= 1.5:
         score += 10; signals.append(f"زيادة حجم {vol_ratio:.1f}x")
 
-    # 7. RSI Divergence
     if calc_rsi_divergence(closes):
         score += 15; signals.append("Divergence ايجابي — قوة خفية")
 
-    # 8. اغلاق قوي
-    recent_closes = closes[-5:]
-    recent_highs  = highs[-5:]
-    if recent_closes and recent_highs:
-        last_close = recent_closes[-1]
-        last_high  = recent_highs[-1]
-        last_low   = lows[-1]
-        rng = last_high - last_low
-        close_pos = (last_close - last_low) / rng if rng > 0 else 0.5
+    if closes and highs and lows:
+        rng       = highs[-1] - lows[-1]
+        close_pos = (closes[-1] - lows[-1]) / rng if rng > 0 else 0.5
         if close_pos >= 0.85:
             score += 10; signals.append("اغلاق عند القمة")
 
@@ -305,26 +287,22 @@ def calc_golden_score(stock, hist):
 
 def build_signal(stock, hist, score, signals, rsi,
                  resistance, support, atr, vol_ratio):
-    closes = hist["closes"]
-    price  = safe_float(stock.get("price") or stock.get("close"))
-    sym    = str(stock.get("symbol",""))
-    name   = stock.get("name") or stock.get("name_ar") or sym
+    price = safe_float(stock.get("price") or stock.get("close"))
+    sym   = str(stock.get("symbol",""))
+    name  = stock.get("name") or stock.get("name_ar") or sym
 
-    entry     = round(price * 1.001, 2)
+    entry  = round(price * 1.001, 2)
 
-    # الهدف الاول — اقرب مقاومة
     if resistance > entry * 1.005:
         target1 = round(resistance, 2)
     else:
         target1 = round(entry + atr * 2, 2)
 
-    # الهدف الثاني — Fibonacci
     swing   = resistance - support if resistance > support else atr * 3
     target2 = round(entry + swing * 0.618, 2)
     if target2 <= target1:
         target2 = round(target1 + atr * 2, 2)
 
-    # وقف الخسارة من ATR الحقيقي
     stop_loss = round(max(support * 0.995, entry - atr * 1.5), 2)
     if stop_loss >= entry:
         stop_loss = round(entry * 0.97, 2)
@@ -339,11 +317,12 @@ def build_signal(stock, hist, score, signals, rsi,
         "متوسط"    if score >= 55 else "ضعيف"
     )
 
-    now = datetime.now(timezone(timedelta(hours=3)))
+    now = datetime.now(KSA)
 
     return {
         "brand":        "مضارب",
-        "mode":         "morning",
+        "mode":         "golden",
+        "type":         "اشارة ذهبية",
         "stock_name":   name,
         "symbol":       sym,
         "price":        f"{price:.2f}",
@@ -367,20 +346,25 @@ def build_signal(stock, hist, score, signals, rsi,
 
 
 def main():
+    import sys
+
     print("\n" + "="*60)
     print("Historical Analyzer -- تحليل 20 يوم تاريخي")
     print("="*60)
 
     if not API_KEY:
         print("API_KEY missing")
-        return
+        sys.exit(1)
+
+    now = datetime.now(KSA)
+    print(f"  الوقت: {now.strftime('%H:%M')} KSA")
 
     candidates = fetch_candidates()
     if not candidates:
         print("لا توجد اسهم مرشحة")
-        return
+        sys.exit(1)
 
-    print(f"\n مرشحون: {len(candidates)} سهم\n")
+    print(f"\n  مرشحون: {len(candidates)} سهم\n")
 
     golden_candidates = []
 
@@ -403,7 +387,7 @@ def main():
         status = "🥇" if score >= GOLDEN_SCORE_MIN else "  "
         print(f"  [{i+1:02d}] {name:<18} ({sym}) "
               f"Score:{score:>4} RSI:{rsi:>5.1f} "
-              f"ATR:{(atr/price*100):.1f}% {status}")
+              f"ATR:{(atr/price*100 if price>0 else 0):.1f}% {status}")
 
         if score >= GOLDEN_SCORE_MIN:
             golden_candidates.append({
@@ -421,8 +405,8 @@ def main():
     print(f"\n{'='*60}")
 
     if not golden_candidates:
-        print("لا توجد اشارات ذهبية اليوم")
-        return
+        print("لا توجد اشارات ذهبية — تخطي")
+        sys.exit(1)
 
     golden_candidates.sort(key=lambda x: x["score"], reverse=True)
     best   = golden_candidates[0]
@@ -432,11 +416,9 @@ def main():
         best["support"], best["atr"], best["vol_ratio"]
     )
 
-    # حفظ الاشارة الذهبية
     with open(GOLDEN_FILE, "w", encoding="utf-8") as f:
         json.dump(signal, f, ensure_ascii=False, indent=2)
 
-    # كتابة daily.json للنشر
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(signal, f, ensure_ascii=False, indent=2)
 
@@ -446,9 +428,6 @@ def main():
     print(f"  هدف1   : {signal['target1']} | هدف2: {signal['target2']}")
     print(f"  وقف    : {signal['stop_loss']} | R:R: {signal['rr']}")
     print(f"  Score  : {signal['score']} | RSI: {signal['rsi']}")
-    print(f"\n  الاشارات:")
-    for s in signal["signals"]:
-        print(f"  - {s}")
 
 
 if __name__ == "__main__":
