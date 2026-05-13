@@ -37,6 +37,37 @@ TASI_SYMBOLS = [
     "9567","9568",
 ]
 
+SECTORS = {
+    "البنوك":         ["1010","1020","1030","1050","1060","1080","1120","1150"],
+    "البتروكيماويات": ["2010","2020","2060","2090","2100","2150","2160","2170",
+                      "2222","2223","2230"],
+    "الاتصالات":      ["7010","7020","7030","7040","7203","7204"],
+    "الطاقة":         ["5110","2040","2050"],
+    "التجزئة":        ["4190","4200","4210","4220","4230","4240","4250","4261"],
+    "العقار":         ["4020","4031","4040","4050","4100","4150","4300","4320",
+                      "4321","4322","4323","4324"],
+    "الصحة":          ["4002","4005","4007","4009","4013","4017","4019","4061"],
+    "الصناعة":        ["1211","1212","2030","2080","2082","2083","2110","2120",
+                      "2130","2140","2180","2190","2200","2210","2220","2240",
+                      "2250","2290","2310","2320","2330","2340","2350","2360",
+                      "2370","2380","2381","2382"],
+    "التامين":        ["8010","8020","8030","8040","8050","8060","8070","8100",
+                      "8120","8150","8160","8170","8180","8190","8200","8210",
+                      "8230","8240","8250","8260","8270","8280","8300","8310",
+                      "8311","8320","8330","8340"],
+    "الاستثمار":      ["1111","4280","4290","4310","4349"],
+    "التقنية":        ["9516","9526","9527","9528","9529","9536","9543","9544",
+                      "9545","9546","9547","9548","9549","9553","9554","9555",
+                      "9556","9557","9558","9559","9560","9561","9562","9563",
+                      "9564","9565","9566","9567","9568"],
+    "الغذاء":         ["2060","2070","6001","6002","6010","6013","6014","6015",
+                      "6020","6040","6050","6060","6070"],
+    "التعليم":        ["4001","4003","4004","4006","4008","4010","4011","4012",
+                      "4014","4015","4016","4018","4021"],
+    "الترفيه":        ["4160","4161","4162","4163","4164","4170","4180"],
+    "النقل":          ["1301","1302","1303","1304","1320","1321","5010","5020"],
+}
+
 
 def safe_float(value, default=0.0):
     try:
@@ -45,16 +76,21 @@ def safe_float(value, default=0.0):
         return default
 
 
+def get_sector(symbol):
+    for sector_name, symbols in SECTORS.items():
+        if str(symbol) in symbols:
+            return sector_name
+    return "اخرى"
+
+
 def is_market_open():
     KSA     = timezone(timedelta(hours=3))
     now     = datetime.now(KSA)
     weekday = now.weekday()
     t       = now.hour * 60 + now.minute
-
     market_days  = [6, 0, 1, 2, 3]
     market_open  = 9 * 60 + 30
     market_close = 15 * 60 + 30
-
     return weekday in market_days and market_open <= t <= market_close
 
 
@@ -84,7 +120,6 @@ def fetch_market_summary():
 
 def fetch_all_stocks():
     seen = {}
-
     for endpoint, key in [
         ("/market/gainers/", "gainers"),
         ("/market/volume/",  "stocks"),
@@ -98,7 +133,6 @@ def fetch_all_stocks():
                     seen[sym] = s
 
     print(f"  gainers+volume -> {len(seen)}")
-
     remaining = [sym for sym in TASI_SYMBOLS if sym not in seen]
     print(f"  fetching {len(remaining)} remaining stocks...")
 
@@ -123,10 +157,11 @@ def normalize(raw):
     resistance = safe_float(raw.get("resistance"), high)
     support    = safe_float(raw.get("support"),    low)
     rsi        = safe_float(raw.get("rsi"), max(20, min(80, 50 + change_pct * 3)))
+    sym        = str(raw.get("symbol", ""))
 
     return {
-        "name":           raw.get("name") or raw.get("name_ar") or str(raw.get("symbol", "")),
-        "symbol":         str(raw.get("symbol", "")),
+        "name":           raw.get("name") or raw.get("name_ar") or sym,
+        "symbol":         sym,
         "price":          price,
         "high":           high,
         "low":            low,
@@ -138,20 +173,18 @@ def normalize(raw):
         "rsi":            rsi,
         "rs_rank":        0,
         "rs_vs_tasi":     0,
-        "sector":         "",
+        "sector":         get_sector(sym),
     }
 
 
 def load_market_data():
     stocks = []
-
     if not API_KEY:
         print("API_KEY missing")
     else:
         print(f"\n fetching ALL TASI from: {API_URL}\n")
         fetch_market_summary()
         all_raw = fetch_all_stocks()
-
         if all_raw:
             stocks = [normalize(s) for s in all_raw
                       if safe_float(s.get("price") or s.get("close")) > 0]
@@ -162,8 +195,36 @@ def load_market_data():
         with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
             raw = json.load(f)
         stocks = [normalize(s) for s in raw]
-
     return stocks
+
+
+def calc_targets(price, high, low, resistance, support, change_pct):
+    entry = round(price * 1.001, 2)
+    atr   = max(high - low, price * 0.01)
+
+    if resistance > entry * 1.005:
+        t1 = round(resistance, 2)
+    else:
+        t1 = round(entry + atr * 2, 2)
+
+    swing = resistance - support if resistance > support else atr * 3
+    t2    = round(entry + swing * 0.618, 2)
+
+    if t2 <= t1:
+        t2 = round(t1 + atr * 2, 2)
+
+    sl_atr     = round(entry - atr * 1.5, 2)
+    sl_support = round(support * 0.995, 2)
+    stop_loss  = round(max(sl_atr, sl_support), 2)
+
+    if stop_loss >= entry:
+        stop_loss = round(entry * 0.97, 2)
+
+    risk   = entry - stop_loss
+    reward = t1 - entry
+    rr     = round(reward / risk, 2) if risk > 0 else 0
+
+    return entry, t1, t2, stop_loss, rr
 
 
 def calculate_score(stock, top_sectors=None):
@@ -176,7 +237,7 @@ def calculate_score(stock, top_sectors=None):
     avg_volume     = max(safe_float(stock.get("avg_volume")), 1)
     change_percent = safe_float(stock.get("change_percent"))
     rsi            = safe_float(stock.get("rsi"), 50)
-    rs_rank        = safe_float(stock.get("rs_rank", 50))
+    rs_rank        = safe_float(stock.get("rs_rank", 0))
     rs_vs_tasi     = safe_float(stock.get("rs_vs_tasi", 0))
     sector         = stock.get("sector", "")
 
@@ -212,46 +273,43 @@ def calculate_score(stock, top_sectors=None):
     if   change_percent >= 3:   score += 15; reasons.append(f"ارتفاع {change_percent:.1f}%")
     elif change_percent >= 1.5: score += 10; reasons.append(f"ارتفاع {change_percent:.1f}%")
 
-    entry     = max(price, resistance * 0.999) if resistance > price * 0.95 else price
-    stop_loss = max(support, entry * 0.97)
-    target1   = entry * 1.03
-    risk      = entry - stop_loss
-    reward    = target1 - entry
-    rr        = reward / risk if risk > 0 else 0
-
-    if   rr >= 2.5: score += 20; reasons.append(f"R:R {rr:.1f} ممتاز")
-    elif rr >= 1.5: score += 10; reasons.append(f"R:R {rr:.1f} جيد")
-    else:           score -= 10; reasons.append(f"R:R {rr:.1f} ضعيف")
+    entry, t1, t2, stop_loss, rr = calc_targets(
+        price, high, low, resistance, support, change_percent)
+    if   rr >= 2.5: score += 15; reasons.append(f"R:R {rr:.1f} ممتاز")
+    elif rr >= 1.5: score +=  8; reasons.append(f"R:R {rr:.1f} جيد")
+    elif rr < 1:    score -= 10; reasons.append(f"R:R {rr:.1f} ضعيف")
 
     if rs_rank >= 80:
-        score += 20; reasons.append(f"RS Rank {rs_rank:.0f} قائد السوق")
+        score += 15; reasons.append(f"RS Rank {rs_rank:.0f} قائد")
     elif rs_rank >= 60:
-        score += 10; reasons.append(f"RS Rank {rs_rank:.0f} فوق المتوسط")
-    elif rs_rank > 0 and rs_rank < 40:
-        score -= 15; reasons.append(f"RS Rank {rs_rank:.0f} ضعيف")
+        score +=  8; reasons.append(f"RS Rank {rs_rank:.0f} فوق المتوسط")
+    elif 0 < rs_rank < 40:
+        score -= 10; reasons.append(f"RS Rank {rs_rank:.0f} ضعيف")
 
     if rs_vs_tasi >= 3:
-        score += 10; reasons.append(f"يتفوق على TASI {rs_vs_tasi:.1f}%")
+        score += 8; reasons.append(f"يتفوق على TASI {rs_vs_tasi:.1f}%")
     elif rs_vs_tasi >= 0:
-        score += 5
+        score += 4
     elif rs_vs_tasi < -3:
-        score -= 10; reasons.append(f"اضعف من TASI {abs(rs_vs_tasi):.1f}%")
+        score -= 8
 
     if top_sectors and sector in top_sectors:
-        score += 15; reasons.append(f"قطاع {sector} متصدر")
+        score += 10; reasons.append(f"قطاع {sector} متصدر")
 
+    score = min(score, 100)
     return score, reasons, rr, volume_ratio
 
 
 def build_daily_json(stock, score, reasons, rr, volume_ratio):
     price      = safe_float(stock.get("price"))
-    resistance = safe_float(stock.get("resistance"), safe_float(stock.get("high"), price))
-    support    = safe_float(stock.get("support"),    safe_float(stock.get("low"),  price))
+    high       = safe_float(stock.get("high"), price)
+    low        = safe_float(stock.get("low"),  price)
+    resistance = safe_float(stock.get("resistance"), high)
+    support    = safe_float(stock.get("support"),    low)
+    change_pct = safe_float(stock.get("change_percent"))
 
-    entry     = round(price * 1.001, 2)
-    target1   = round(entry * 1.03, 2)
-    target2   = round(entry * 1.06, 2)
-    stop_loss = round(max(support, entry * 0.97), 2)
+    entry, target1, target2, stop_loss, rr_calc = calc_targets(
+        price, high, low, resistance, support, change_pct)
 
     momentum = (
         "قوي جداً" if score >= 85 else
@@ -274,7 +332,7 @@ def build_daily_json(stock, score, reasons, rr, volume_ratio):
         "momentum":     momentum,
         "score":        score,
         "rsi":          round(safe_float(stock.get("rsi")), 1),
-        "rr":           round(rr, 2),
+        "rr":           round(rr_calc, 2),
         "volume_ratio": round(volume_ratio, 2),
         "rs_rank":      stock.get("rs_rank", 0),
         "rs_vs_tasi":   stock.get("rs_vs_tasi", 0),
@@ -288,12 +346,10 @@ def build_daily_json(stock, score, reasons, rr, volume_ratio):
 def main():
     import sys
 
-    # فحص وقت السوق
     if not is_market_open():
         print("السوق مغلق الان - لا يتم النشر")
         sys.exit(1)
 
-    # Market Intelligence
     intel       = {}
     intel_map   = {}
     top_sectors = []
@@ -317,7 +373,6 @@ def main():
         if sym in intel_map:
             stock["rs_rank"]    = intel_map[sym].get("rs_rank", 0)
             stock["rs_vs_tasi"] = intel_map[sym].get("rs_vs_tasi", 0)
-            stock["sector"]     = intel_map[sym].get("sector", "")
 
     ranked = []
     for stock in stocks:
@@ -348,7 +403,8 @@ def main():
     for i, r in enumerate(ranked[:5], 1):
         s = r["stock"]
         print(f"  {i}. {s.get('name','')[:20]:<20} ({s.get('symbol'):>4}) "
-              f"Score:{r['score']:>4} RS:{s.get('rs_rank',0):>3} Vol:{r['volume_ratio']:.1f}x")
+              f"Score:{r['score']:>4} RS:{s.get('rs_rank',0):>3} "
+              f"Vol:{r['volume_ratio']:.1f}x Sec:{s.get('sector','')}")
 
     best       = ranked[0]
     daily_data = build_daily_json(
@@ -361,7 +417,10 @@ def main():
 
     src = daily_data["source"]
     print(f"\n Selected: {daily_data['stock_name']} ({daily_data['symbol']})")
-    print(f"  Score: {daily_data['score']} | RS: {daily_data['rs_rank']} | Source: {src}")
+    print(f"  Price: {daily_data['price']} | Entry: {daily_data['entry']}")
+    print(f"  T1: {daily_data['target1']} | T2: {daily_data['target2']} | SL: {daily_data['stop_loss']}")
+    print(f"  Score: {daily_data['score']} | R:R: {daily_data['rr']} | RS: {daily_data['rs_rank']}")
+    print(f"  Sector: {daily_data['sector']} | Source: {src}")
     print(f"  Time: {daily_data['generated_at']}")
 
     if src == "market_snapshot":
