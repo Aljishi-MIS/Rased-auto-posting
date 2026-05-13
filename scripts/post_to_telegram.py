@@ -47,7 +47,7 @@ caption = f"""
 🏢 القطاع: {sector if sector else "—"}
 
 💰 السعر الحالي: *{price} ريال*
-🎯 نقطة الدخول: *{entry} ريال* {pct_entry}
+🎯 نقطة الدخول: *{entry} ريال* 
 
 🟢 الهدف الاول:  *{target1} ريال* {pct_t1}
 🟢 الهدف الثاني: *{target2} ريال* {pct_t2}
