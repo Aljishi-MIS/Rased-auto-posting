@@ -55,7 +55,9 @@ SECTORS = {
                       "8120","8150","8160","8170","8180","8190","8200","8210",
                       "8230","8240","8250","8260","8270","8280","8300","8310",
                       "8311","8320","8330","8340"],
-    "الاستثمار":      ["1111","4280","4290","4310","4349"],
+    "الاستثمار":      ["1111","4280","4290","4310","4349","4330","4331","4332",
+                      "4333","4334","4335","4336","4337","4338","4339","4340",
+                      "4341","4342","4344","4345","4346","4347","4348"],
     "التقنية":        ["9516","9526","9527","9528","9529","9536","9543","9544",
                       "9545","9546","9547","9548","9549","9553","9554","9555",
                       "9556","9557","9558","9559","9560","9561","9562","9563",
@@ -202,21 +204,20 @@ def calc_targets(price, high, low, resistance, support, change_pct):
     entry = round(price * 1.001, 2)
     atr   = max(high - low, price * 0.01)
 
+    # الهدف الاول — اقرب مقاومة (حد اقصى 4%)
     if resistance > entry * 1.005:
-        t1 = round(resistance, 2)
+        raw_t1 = resistance
     else:
-        t1 = round(entry + atr * 2, 2)
+        raw_t1 = entry + atr * 1.5
+    t1 = round(min(raw_t1, entry * 1.04), 2)
 
-    swing = resistance - support if resistance > support else atr * 3
-    t2    = round(entry + swing * 0.618, 2)
+    # الهدف الثاني — بين 5% و 8%
+    raw_t2 = t1 + atr * 1.5
+    t2     = round(max(entry * 1.05, min(raw_t2, entry * 1.08)), 2)
 
-    if t2 <= t1:
-        t2 = round(t1 + atr * 2, 2)
-
-    sl_atr     = round(entry - atr * 1.5, 2)
-    sl_support = round(support * 0.995, 2)
-    stop_loss  = round(max(sl_atr, sl_support), 2)
-
+    # وقف الخسارة — حد اقصى 3%
+    raw_sl    = max(support * 0.995, entry - atr * 1.5)
+    stop_loss = round(max(raw_sl, entry * 0.97), 2)
     if stop_loss >= entry:
         stop_loss = round(entry * 0.97, 2)
 
