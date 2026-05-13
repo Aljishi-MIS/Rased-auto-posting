@@ -11,6 +11,7 @@ if not BOT_TOKEN or not CHAT_ID:
 with open("data/daily.json", "r", encoding="utf-8") as f:
     data = json.load(f)
 
+
 def pct(base, target):
     try:
         b = float(base)
@@ -21,24 +22,46 @@ def pct(base, target):
         pass
     return ""
 
-stock_name = data.get("stock_name", "")
-symbol     = data.get("symbol", "")
-price      = data.get("price", "")
-entry      = data.get("entry", "")
-target1    = data.get("target1", "")
-target2    = data.get("target2", "")
-stop_loss  = data.get("stop_loss", "")
-momentum   = data.get("momentum", "")
-note       = data.get("note", "")
-score      = data.get("score", "")
-rs_rank    = data.get("rs_rank", "")
-sector     = data.get("sector", "")
-generated  = data.get("generated_at", "")
 
-pct_entry  = pct(price,  entry)
-pct_t1     = pct(entry,  target1)
-pct_t2     = pct(entry,  target2)
-pct_stop   = pct(entry,  stop_loss)
+stock_name     = data.get("stock_name",        "")
+symbol         = data.get("symbol",            "")
+price          = data.get("price",             "")
+entry          = data.get("entry",             "")
+target1        = data.get("target1",           "")
+target2        = data.get("target2",           "")
+stop_loss      = data.get("stop_loss",         "")
+momentum       = data.get("momentum",          "")
+note           = data.get("note",              "")
+score          = data.get("score",             "")
+rs_rank        = data.get("rs_rank",           "")
+sector         = data.get("sector",            "")
+generated      = data.get("generated_at",      "")
+claude_note    = data.get("claude_note",       "")
+claude_warning = data.get("claude_warning",    "")
+claude_conf    = data.get("claude_confidence", "")
+news_sentiment = data.get("news_sentiment",    "neutral")
+news_summary   = data.get("news_summary",      "")
+
+pct_entry = pct(price,  entry)
+pct_t1    = pct(entry,  target1)
+pct_t2    = pct(entry,  target2)
+pct_stop  = pct(entry,  stop_loss)
+
+# قسم الاخبار
+news_section = ""
+if news_summary:
+    news_emoji = "✅" if news_sentiment == "positive" else "❌" if news_sentiment == "negative" else "➖"
+    news_section = f"\n{news_emoji} *الاخبار:* {news_summary}"
+
+# قسم Claude
+claude_section = ""
+if claude_note:
+    claude_section += f"\n🤖 *تحليل Claude:* {claude_note}"
+if claude_warning:
+    claude_section += f"\n⚠️ *تنبيه:* {claude_warning}"
+if claude_conf:
+    conf_emoji = "🟢" if claude_conf == "عالية" else "🟡" if claude_conf == "متوسطة" else "🔴"
+    claude_section += f"\n{conf_emoji} *الثقة:* {claude_conf}"
 
 caption = f"""
 *اشارة اليوم — مضارب*
@@ -47,7 +70,7 @@ caption = f"""
 🏢 القطاع: {sector if sector else "—"}
 
 💰 السعر الحالي: *{price} ريال*
-🎯 نقطة الدخول: *{entry} ريال* 
+🎯 نقطة الدخول: *{entry} ريال* {pct_entry}
 
 🟢 الهدف الاول:  *{target1} ريال* {pct_t1}
 🟢 الهدف الثاني: *{target2} ريال* {pct_t2}
@@ -59,6 +82,7 @@ caption = f"""
 🔢 Score: *{score}*
 
 📌 {note}
+{news_section}{claude_section}
 
 🕐 {generated}
 
