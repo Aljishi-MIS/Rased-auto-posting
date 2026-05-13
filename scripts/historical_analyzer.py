@@ -38,22 +38,6 @@ def get(endpoint, params=None):
     return None
 
 
-def is_pre_market():
-    now = datetime.now(KSA)
-    if now.weekday() not in [6, 0, 1, 2, 3]:
-        return False
-    t = now.hour * 60 + now.minute
-    return 5*60+30 <= t <= 6*60+0
-
-
-def is_market_hours():
-    now = datetime.now(KSA)
-    if now.weekday() not in [6, 0, 1, 2, 3]:
-        return False
-    t = now.hour * 60 + now.minute
-    return 9*60+30 <= t <= 15*60+30
-
-
 def fetch_historical(symbol, period=20):
     data = get(f"/historical/{symbol}/", {"period": period})
     if not data:
@@ -173,15 +157,12 @@ def find_support_resistance(highs, lows, closes, lookback=20):
 def calc_volume_trend(volumes, days=5):
     if len(volumes) < days * 2:
         return 1.0, False
-    recent   = volumes[-days:]
-    baseline = volumes[-(days*2):-days]
-    avg_r    = sum(recent)   / len(recent)
-    avg_b    = sum(baseline) / len(baseline) if baseline else 1
-    ratio    = avg_r / avg_b if avg_b > 0 else 1
-    is_gradual = all(
-        recent[i] >= recent[i-1] * 0.8
-        for i in range(1, len(recent))
-    )
+    recent     = volumes[-days:]
+    baseline   = volumes[-(days*2):-days]
+    avg_r      = sum(recent)   / len(recent)
+    avg_b      = sum(baseline) / len(baseline) if baseline else 1
+    ratio      = avg_r / avg_b if avg_b > 0 else 1
+    is_gradual = all(recent[i] >= recent[i-1] * 0.8 for i in range(1, len(recent)))
     return round(ratio, 2), is_gradual
 
 
@@ -291,24 +272,27 @@ def build_signal(stock, hist, score, signals, rsi,
     sym   = str(stock.get("symbol",""))
     name  = stock.get("name") or stock.get("name_ar") or sym
 
-    entry  = round(price * 1.001, 2)
+    entry = round(price * 1.001, 2)
 
+    # الهدف الاول — اقرب مقاومة (حد اقصى 4%)
     if resistance > entry * 1.005:
-        target1 = round(resistance, 2)
+        raw_t1 = resistance
     else:
-        target1 = round(entry + atr * 2, 2)
+        raw_t1 = entry + atr * 1.5
+    t1 = round(min(raw_t1, entry * 1.04), 2)
 
-    swing   = resistance - support if resistance > support else atr * 3
-    target2 = round(entry + swing * 0.618, 2)
-    if target2 <= target1:
-        target2 = round(target1 + atr * 2, 2)
+    # الهدف الثاني — بين 5% و 8%
+    raw_t2 = t1 + atr * 1.5
+    t2     = round(max(entry * 1.05, min(raw_t2, entry * 1.08)), 2)
 
-    stop_loss = round(max(support * 0.995, entry - atr * 1.5), 2)
+    # وقف الخسارة — حد اقصى 3%
+    raw_sl    = max(support * 0.995, entry - atr * 1.5)
+    stop_loss = round(max(raw_sl, entry * 0.97), 2)
     if stop_loss >= entry:
         stop_loss = round(entry * 0.97, 2)
 
     risk   = entry - stop_loss
-    reward = target1 - entry
+    reward = t1 - entry
     rr     = round(reward / risk, 2) if risk > 0 else 0
 
     momentum = (
@@ -327,8 +311,8 @@ def build_signal(stock, hist, score, signals, rsi,
         "symbol":       sym,
         "price":        f"{price:.2f}",
         "entry":        f"{entry:.2f}",
-        "target1":      f"{target1:.2f}",
-        "target2":      f"{target2:.2f}",
+        "target1":      f"{t1:.2f}",
+        "target2":      f"{t2:.2f}",
         "stop_loss":    f"{stop_loss:.2f}",
         "momentum":     momentum,
         "score":        score,
@@ -384,10 +368,11 @@ def main():
         score, signals, rsi, resistance, support, atr, vol_ratio = \
             calc_golden_score(stock, hist)
 
-        status = "🥇" if score >= GOLDEN_SCORE_MIN else "  "
+        atr_pct = atr / price * 100 if price > 0 else 0
+        status  = "🥇" if score >= GOLDEN_SCORE_MIN else "  "
         print(f"  [{i+1:02d}] {name:<18} ({sym}) "
               f"Score:{score:>4} RSI:{rsi:>5.1f} "
-              f"ATR:{(atr/price*100 if price>0 else 0):.1f}% {status}")
+              f"ATR:{atr_pct:.1f}% {status}")
 
         if score >= GOLDEN_SCORE_MIN:
             golden_candidates.append({
@@ -424,10 +409,11 @@ def main():
 
     print(f"الاشارة الذهبية:")
     print(f"  السهم  : {signal['stock_name']} ({signal['symbol']})")
-    print(f"  السعر  : {signal['price']} | دخول: {signal['entry']}")
-    print(f"  هدف1   : {signal['target1']} | هدف2: {signal['target2']}")
-    print(f"  وقف    : {signal['stop_loss']} | R:R: {signal['rr']}")
-    print(f"  Score  : {signal['score']} | RSI: {signal['rsi']}")
+    print(f"  دخول   : {signal['entry']}")
+    print(f"  هدف1   : {signal['target1']} ({round((float(signal['target1'])-float(signal['entry']))/float(signal['entry'])*100,1)}%)")
+    print(f"  هدف2   : {signal['target2']} ({round((float(signal['target2'])-float(signal['entry']))/float(signal['entry'])*100,1)}%)")
+    print(f"  وقف    : {signal['stop_loss']} ({round((float(signal['stop_loss'])-float(signal['entry']))/float(signal['entry'])*100,1)}%)")
+    print(f"  R:R    : {signal['rr']} | Score: {signal['score']}")
 
 
 if __name__ == "__main__":
