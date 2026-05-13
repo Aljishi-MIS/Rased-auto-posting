@@ -4,8 +4,9 @@ import re
 import requests
 from datetime import datetime, timezone, timedelta
 
-API_KEY  = os.environ.get("API_KEY")
-API_URL  = os.environ.get("API_URL", "https://app.sahmk.sa/api/v1")
+API_KEY           = os.environ.get("API_KEY")
+API_URL           = os.environ.get("API_URL", "https://app.sahmk.sa/api/v1")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 SNAPSHOT_FILE = "data/market_snapshot.json"
 OUTPUT_FILE   = "data/daily.json"
@@ -319,4 +320,306 @@ def calculate_score(stock, top_sectors=None, news_delta=0):
 
     entry, t1, t2, stop_loss, rr = calc_targets(
         price, high, low, resistance, support, change_percent)
-    if   rr >= 2.5: score += 15; reasons.append(f"R:​​​​​​​​​​​​​​​​
+    if   rr >= 2.5: score += 15; reasons.append(f"R:R {rr:.1f} ممتاز")
+    elif rr >= 1.5: score +=  8; reasons.append(f"R:R {rr:.1f} جيد")
+    elif rr < 1:    score -= 10; reasons.append(f"R:R {rr:.1f} ضعيف")
+
+    if rs_rank >= 80:
+        score += 15; reasons.append(f"RS Rank {rs_rank:.0f} قائد السوق")
+    elif rs_rank >= 60:
+        score +=  8; reasons.append(f"RS Rank {rs_rank:.0f} فوق المتوسط")
+    elif 0 < rs_rank < 40:
+        score -= 10; reasons.append(f"RS Rank {rs_rank:.0f} ضعيف")
+
+    if rs_vs_tasi >= 3:
+        score += 8; reasons.append(f"يتفوق على TASI بـ {rs_vs_tasi:.1f}%")
+    elif rs_vs_tasi >= 0:
+        score += 4
+    elif rs_vs_tasi < -3:
+        score -= 8
+
+    if top_sectors and sector in top_sectors:
+        score += 10; reasons.append(f"قطاع {sector} متصدر اليوم")
+
+    score += news_delta
+    score  = min(score, 100)
+    return score, reasons, rr, volume_ratio
+
+
+def build_daily_json(stock, score, reasons, rr, volume_ratio, news_analysis=None):
+    price      = safe_float(stock.get("price"))
+    high       = safe_float(stock.get("high"), price)
+    low        = safe_float(stock.get("low"),  price)
+    resistance = safe_float(stock.get("resistance"), high)
+    support    = safe_float(stock.get("support"),    low)
+    change_pct = safe_float(stock.get("change_percent"))
+    rsi        = safe_float(stock.get("rsi"), 50)
+    rs_rank    = stock.get("rs_rank", 0)
+    sector     = stock.get("sector", "")
+
+    entry, target1, target2, stop_loss, rr_calc = calc_targets(
+        price, high, low, resistance, support, change_pct)
+
+    news_sentiment = news_analysis.get("sentiment", "neutral") if news_analysis else "neutral"
+    news_reason    = news_analysis.get("reason",    "")        if news_analysis else ""
+    news_summary   = news_analysis.get("summary",   "")        if news_analysis else ""
+
+    signal_reason = build_signal_reason(
+        reasons, resistance, volume_ratio, rsi,
+        rs_rank, sector, news_reason, news_sentiment
+    )
+
+    momentum = score_label(score)
+    from_api = bool(API_KEY) and len(reasons) > 0
+
+    return {
+        "brand":          "مضارب",
+        "mode":           "morning",
+        "stock_name":     stock.get("name", ""),
+        "symbol":         str(stock.get("symbol", "")),
+        "price":          f"{price:.2f}",
+        "entry":          f"{entry:.2f}",
+        "target1":        f"{target1:.2f}",
+        "target2":        f"{target2:.2f}",
+        "stop_loss":      f"{stop_loss:.2f}",
+        "momentum":       momentum,
+        "score":          score,
+        "rsi":            round(rsi, 1),
+        "rr":             round(rr_calc, 2),
+        "volume_ratio":   round(volume_ratio, 2),
+        "rs_rank":        rs_rank,
+        "rs_vs_tasi":     stock.get("rs_vs_tasi", 0),
+        "sector":         sector,
+        "signal_reason":  signal_reason,
+        "news_sentiment": news_sentiment,
+        "news_summary":   news_summary,
+        "source":         "sahmk_api" if from_api else "market_snapshot",
+        "generated_at":   datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "note":           f"قراءة فنية تعليمية: {signal_reason}.",
+    }
+
+
+def claude_review(candidates, top_sectors):
+    if not candidates:
+        return None, {}
+    if len(candidates) == 1:
+        return candidates[0], {}
+
+    summaries = []
+    for i, c in enumerate(candidates[:3], 1):
+        s = c["stock"]
+        summaries.append(
+            f"{i}. {s.get('name','')} ({s.get('symbol','')})\n"
+            f"   Score: {c['score']} | RS Rank: {s.get('rs_rank',0)}\n"
+            f"   RSI: {s.get('rsi',50):.0f} | Volume: {c['volume_ratio']:.1f}x\n"
+            f"   القطاع: {s.get('sector','')}\n"
+            f"   الاسباب: {' + '.join(c['reasons'][:3])}\n"
+            f"   R:R: {c['rr']}"
+        )
+
+    prompt = f"""
+انت محلل مضاربة محترف متخصص في سوق الاسهم السعودي تاسي.
+
+القطاعات المتصدرة اليوم: {', '.join(top_sectors)}
+
+هذه افضل 3 اسهم وجدها النظام:
+
+{chr(10).join(summaries)}
+
+مهمتك:
+1. اختر السهم الافضل للمضاربة اليوم
+2. اشرح لماذا بجملة واحدة احترافية بالعربي
+3. حدد مستوى الثقة
+4. نبه اذا كان هناك مخاطر
+
+اجب بـ JSON فقط:
+{{
+  "selected_index": 1 او 2 او 3,
+  "symbol": "رمز السهم",
+  "reason": "جملة واحدة سبب الاختيار بالعربي",
+  "confidence": "عالية" او "متوسطة" او "منخفضة",
+  "warning": "تحذير ان وجد او اتركه فارغ",
+  "note": "ملاحظة تحليلية قصيرة للمشتركين"
+}}
+"""
+
+    try:
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Content-Type":      "application/json",
+                "anthropic-version": "2023-06-01",
+                "x-api-key":         ANTHROPIC_API_KEY,
+            },
+            json={
+                "model":      "claude-sonnet-4-20250514",
+                "max_tokens": 400,
+                "messages":   [{"role": "user", "content": prompt}]
+            },
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            data    = response.json()
+            content = data["content"][0]["text"].strip()
+            match   = re.search(r'\{.*\}', content, re.DOTALL)
+            if match:
+                result = json.loads(match.group())
+                idx    = int(result.get("selected_index", 1)) - 1
+                idx    = max(0, min(idx, len(candidates)-1))
+                print(f"\n  Claude اختار : {result.get('symbol','')}")
+                print(f"  السبب         : {result.get('reason','')}")
+                print(f"  الثقة         : {result.get('confidence','')}")
+                if result.get("warning"):
+                    print(f"  تحذير         : {result.get('warning','')}")
+                return candidates[idx], result
+        else:
+            print(f"  Claude API status: {response.status_code}")
+
+    except Exception as e:
+        print(f"  Claude review error: {e}")
+
+    return candidates[0], {}
+
+
+def main():
+    import sys
+
+    if not is_market_open():
+        print("السوق مغلق الان - لا يتم النشر")
+        sys.exit(1)
+
+    intel       = {}
+    intel_map   = {}
+    top_sectors = []
+
+    try:
+        import os as _os
+        sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+        from market_intelligence import run as run_intel
+        intel       = run_intel() or {}
+        top_sectors = intel.get("top_sectors", [])
+        for s in intel.get("top_stocks", []):
+            intel_map[s["symbol"]] = s
+        print(f"\n Market Intelligence: {len(intel_map)} | Sectors: {', '.join(top_sectors)}")
+    except Exception as e:
+        print(f"\n Market Intelligence error: {e}")
+
+    stocks = load_market_data()
+
+    for stock in stocks:
+        sym = str(stock.get("symbol", ""))
+        if sym in intel_map:
+            stock["rs_rank"]    = intel_map[sym].get("rs_rank", 0)
+            stock["rs_vs_tasi"] = intel_map[sym].get("rs_vs_tasi", 0)
+
+    ranked = []
+    for stock in stocks:
+        if safe_float(stock.get("price")) <= 0 or safe_float(stock.get("volume")) <= 0:
+            continue
+        score, reasons, rr, vol_ratio = calculate_score(stock, top_sectors, 0)
+        if score > 0:
+            ranked.append({
+                "score":        score,
+                "stock":        stock,
+                "reasons":      reasons,
+                "rr":           rr,
+                "volume_ratio": vol_ratio,
+            })
+
+    if not ranked:
+        for stock in stocks:
+            score, reasons, rr, vol_ratio = calculate_score(stock, top_sectors, 0)
+            ranked.append({
+                "score":        score,
+                "stock":        stock,
+                "reasons":      reasons,
+                "rr":           rr,
+                "volume_ratio": vol_ratio,
+            })
+
+    if not ranked:
+        raise RuntimeError("no stocks found")
+
+    ranked.sort(key=lambda x: x["score"], reverse=True)
+
+    print(f"\n{'='*60}")
+    print("Top 5 TASI:")
+    for i, r in enumerate(ranked[:5], 1):
+        s = r["stock"]
+        print(f"  {i}. {s.get('name','')[:20]:<20} ({s.get('symbol'):>4}) "
+              f"Score:{r['score']:>4} RS:{s.get('rs_rank',0):>3} "
+              f"Vol:{r['volume_ratio']:.1f}x Sec:{s.get('sector','')}")
+
+    print(f"\n{'='*60}")
+    print("تحليل اخبار + مراجعة Claude...")
+
+    try:
+        from news_analyzer import get_news_analysis
+    except ImportError:
+        def get_news_analysis(sym, name):
+            return {"sentiment": "neutral", "score_delta": 0,
+                    "reason": "", "summary": ""}
+
+    final_candidates = []
+    for r in ranked[:3]:
+        s         = r["stock"]
+        sym       = str(s.get("symbol",""))
+        name      = s.get("name","")
+        news      = get_news_analysis(sym, name)
+        delta     = news.get("score_delta", 0)
+        new_score = min(r["score"] + delta, 100)
+
+        final_candidates.append({
+            "score":        new_score,
+            "stock":        s,
+            "reasons":      r["reasons"],
+            "rr":           r["rr"],
+            "volume_ratio": r["volume_ratio"],
+            "news":         news,
+        })
+        print(f"  {name[:20]:<20} Score: {r['score']} -> {new_score} (اخبار: {delta:+d})")
+
+    final_candidates.sort(key=lambda x: x["score"], reverse=True)
+
+    best, claude_result = claude_review(final_candidates, top_sectors)
+
+    claude_reason  = claude_result.get("reason",    "") if claude_result else ""
+    claude_note    = claude_result.get("note",       "") if claude_result else ""
+    claude_warning = claude_result.get("warning",    "") if claude_result else ""
+    claude_conf    = claude_result.get("confidence", "متوسطة") if claude_result else "متوسطة"
+
+    daily_data = build_daily_json(
+        best["stock"], best["score"],
+        best["reasons"], best["rr"],
+        best["volume_ratio"], best.get("news")
+    )
+
+    if claude_reason:
+        daily_data["note"]              = f"قراءة فنية تعليمية: {claude_reason}."
+    if claude_note:
+        daily_data["claude_note"]       = claude_note
+    if claude_warning:
+        daily_data["claude_warning"]    = claude_warning
+    daily_data["claude_confidence"]     = claude_conf
+
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(daily_data, f, ensure_ascii=False, indent=2)
+
+    print(f"\n Selected   : {daily_data['stock_name']} ({daily_data['symbol']})")
+    print(f"  Price     : {daily_data['price']} | Entry: {daily_data['entry']}")
+    print(f"  T1        : {daily_data['target1']} | T2: {daily_data['target2']} | SL: {daily_data['stop_loss']}")
+    print(f"  Score     : {daily_data['score']} | Momentum: {daily_data['momentum']}")
+    print(f"  Claude    : {claude_reason}")
+    print(f"  Confidence: {claude_conf}")
+    if claude_warning:
+        print(f"  Warning   : {claude_warning}")
+    print(f"  Sector    : {daily_data['sector']} | Source: {daily_data['source']}")
+
+    if daily_data.get("source") == "market_snapshot":
+        print("\n  WARNING: using local snapshot")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
