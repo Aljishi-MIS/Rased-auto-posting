@@ -85,6 +85,13 @@ def get_sector(symbol):
     return "اخرى"
 
 
+def score_label(score):
+    if score >= 90: return "انفجار محتمل"
+    if score >= 80: return "زخم قوي"
+    if score >= 75: return "مراقبة"
+    return "ضعيف"
+
+
 def is_market_open():
     KSA     = timezone(timedelta(hours=3))
     now     = datetime.now(KSA)
@@ -201,15 +208,17 @@ def load_market_data():
 
 
 def calc_targets(price, high, low, resistance, support, change_pct):
-    entry = round(price * 1.001, 2)
-    atr   = max(high - low, price * 0.01)
+    atr = max(high - low, price * 0.01)
+
+    # Entry Trigger — فوق المقاومة بـ 0.5% كتأكيد اختراق
+    if resistance > price * 1.002:
+        entry = round(resistance * 1.005, 2)
+    else:
+        entry = round(price * 1.005, 2)
 
     # الهدف الاول — اقرب مقاومة (حد اقصى 4%)
-    if resistance > entry * 1.005:
-        raw_t1 = resistance
-    else:
-        raw_t1 = entry + atr * 1.5
-    t1 = round(min(raw_t1, entry * 1.04), 2)
+    raw_t1 = entry + atr * 1.5
+    t1     = round(min(raw_t1, entry * 1.04), 2)
 
     # الهدف الثاني — بين 5% و 8%
     raw_t2 = t1 + atr * 1.5
@@ -228,7 +237,50 @@ def calc_targets(price, high, low, resistance, support, change_pct):
     return entry, t1, t2, stop_loss, rr
 
 
-def calculate_score(stock, top_sectors=None):
+def build_signal_reason(reasons, resistance, vol_ratio, rsi, rs_rank, sector,
+                         news_reason="", news_sentiment="neutral"):
+    """
+    يبني جملة سبب الاشارة الاحترافية
+    """
+    parts = []
+
+    # اختراق المقاومة
+    if any("اختراق" in r or "قريب" in r for r in reasons):
+        parts.append(f"اختراق {resistance:.2f}")
+
+    # السيولة
+    if vol_ratio >= 2:
+        parts.append(f"سيولة {vol_ratio:.1f}x فوق المتوسط")
+    elif vol_ratio >= 1.5:
+        parts.append(f"سيولة {vol_ratio:.1f}x")
+
+    # RSI
+    if 50 <= rsi <= 65:
+        parts.append(f"RSI {rsi:.0f} في المنطقة الذهبية")
+    elif 40 <= rsi < 50:
+        parts.append(f"RSI {rsi:.0f} بداية زخم")
+
+    # RS Rank
+    if rs_rank >= 80:
+        parts.append(f"RS Rank {rs_rank} قائد السوق")
+
+    # القطاع
+    if sector and sector != "اخرى":
+        parts.append(f"قطاع {sector} صاعد")
+
+    # الاخبار
+    if news_sentiment == "positive" and news_reason:
+        parts.append(f"اخبار ايجابية: {news_reason}")
+    elif news_sentiment == "negative":
+        parts.append(f"تحذير: {news_reason}")
+
+    if not parts:
+        parts = reasons[:2]
+
+    return " + ".join(parts[:4])
+
+
+def calculate_score(stock, top_sectors=None, news_delta=0):
     price          = safe_float(stock.get("price"))
     high           = safe_float(stock.get("high"), price)
     low            = safe_float(stock.get("low"),  price)
@@ -252,16 +304,16 @@ def calculate_score(stock, top_sectors=None):
         if price >= resistance:
             score += 30; reasons.append("اختراق مقاومة")
         elif dist <= 0.015:
-            score += 22; reasons.append("قريب من الاختراق")
+            score += 22; reasons.append(f"قريب من الاختراق ({resistance:.2f})")
         elif dist <= 0.03:
-            score += 12; reasons.append("قريب من مقاومة")
+            score += 12; reasons.append(f"قريب من مقاومة ({resistance:.2f})")
 
     volume_ratio = volume / avg_volume
-    if   volume_ratio >= 3:   score += 25; reasons.append(f"حجم {volume_ratio:.1f}x")
-    elif volume_ratio >= 2:   score += 20; reasons.append(f"حجم {volume_ratio:.1f}x")
-    elif volume_ratio >= 1.5: score += 10; reasons.append("زيادة سيولة")
+    if   volume_ratio >= 3:   score += 25; reasons.append(f"سيولة استثنائية {volume_ratio:.1f}x")
+    elif volume_ratio >= 2:   score += 20; reasons.append(f"سيولة عالية {volume_ratio:.1f}x")
+    elif volume_ratio >= 1.5: score += 10; reasons.append(f"سيولة جيدة {volume_ratio:.1f}x")
 
-    if   50 <= rsi <= 65:  score += 20; reasons.append(f"RSI {rsi:.0f} صحي")
+    if   50 <= rsi <= 65:  score += 20; reasons.append(f"RSI {rsi:.0f} في المنطقة الذهبية")
     elif 40 <= rsi < 50:   score += 12; reasons.append(f"RSI {rsi:.0f} بداية زخم")
     elif 65 < rsi <= 72:   score +=  8; reasons.append(f"RSI {rsi:.0f} قوي")
     elif rsi > 75:         score -= 15; reasons.append(f"RSI {rsi:.0f} تشبع شرائي")
@@ -271,7 +323,7 @@ def calculate_score(stock, top_sectors=None):
     if   close_pos >= 0.85: score += 20; reasons.append("اغلاق عند القمة")
     elif close_pos >= 0.70: score += 12; reasons.append("تمركز ايجابي")
 
-    if   change_percent >= 3:   score += 15; reasons.append(f"ارتفاع {change_percent:.1f}%")
+    if   change_percent >= 3:   score += 15; reasons.append(f"ارتفاع قوي {change_percent:.1f}%")
     elif change_percent >= 1.5: score += 10; reasons.append(f"ارتفاع {change_percent:.1f}%")
 
     entry, t1, t2, stop_loss, rr = calc_targets(
@@ -281,67 +333,85 @@ def calculate_score(stock, top_sectors=None):
     elif rr < 1:    score -= 10; reasons.append(f"R:R {rr:.1f} ضعيف")
 
     if rs_rank >= 80:
-        score += 15; reasons.append(f"RS Rank {rs_rank:.0f} قائد")
+        score += 15; reasons.append(f"RS Rank {rs_rank:.0f} قائد السوق")
     elif rs_rank >= 60:
         score +=  8; reasons.append(f"RS Rank {rs_rank:.0f} فوق المتوسط")
     elif 0 < rs_rank < 40:
         score -= 10; reasons.append(f"RS Rank {rs_rank:.0f} ضعيف")
 
     if rs_vs_tasi >= 3:
-        score += 8; reasons.append(f"يتفوق على TASI {rs_vs_tasi:.1f}%")
+        score += 8; reasons.append(f"يتفوق على TASI بـ {rs_vs_tasi:.1f}%")
     elif rs_vs_tasi >= 0:
         score += 4
     elif rs_vs_tasi < -3:
         score -= 8
 
     if top_sectors and sector in top_sectors:
-        score += 10; reasons.append(f"قطاع {sector} متصدر")
+        score += 10; reasons.append(f"قطاع {sector} متصدر اليوم")
+
+    # اضافة تاثير الاخبار
+    score += news_delta
 
     score = min(score, 100)
     return score, reasons, rr, volume_ratio
 
 
-def build_daily_json(stock, score, reasons, rr, volume_ratio):
+def build_daily_json(stock, score, reasons, rr, volume_ratio, news_analysis=None):
     price      = safe_float(stock.get("price"))
     high       = safe_float(stock.get("high"), price)
     low        = safe_float(stock.get("low"),  price)
     resistance = safe_float(stock.get("resistance"), high)
     support    = safe_float(stock.get("support"),    low)
     change_pct = safe_float(stock.get("change_percent"))
+    rsi        = safe_float(stock.get("rsi"), 50)
+    rs_rank    = stock.get("rs_rank", 0)
+    sector     = stock.get("sector", "")
 
     entry, target1, target2, stop_loss, rr_calc = calc_targets(
         price, high, low, resistance, support, change_pct)
 
-    momentum = (
-        "قوي جداً" if score >= 85 else
-        "قوي"      if score >= 70 else
-        "متوسط"    if score >= 55 else "ضعيف"
+    news_sentiment = news_analysis.get("sentiment", "neutral") if news_analysis else "neutral"
+    news_reason    = news_analysis.get("reason",    "")        if news_analysis else ""
+    news_summary   = news_analysis.get("summary",   "")        if news_analysis else ""
+
+    # سبب الاشارة الاحترافي
+    signal_reason = build_signal_reason(
+        reasons, resistance, volume_ratio, rsi,
+        rs_rank, sector, news_reason, news_sentiment
     )
+
+    # تصنيف الزخم المحسّن
+    momentum = score_label(score)
 
     from_api = bool(API_KEY) and len(reasons) > 0
 
-    return {
-        "brand":        "مضارب",
-        "mode":         "morning",
-        "stock_name":   stock.get("name", ""),
-        "symbol":       str(stock.get("symbol", "")),
-        "price":        f"{price:.2f}",
-        "entry":        f"{entry:.2f}",
-        "target1":      f"{target1:.2f}",
-        "target2":      f"{target2:.2f}",
-        "stop_loss":    f"{stop_loss:.2f}",
-        "momentum":     momentum,
-        "score":        score,
-        "rsi":          round(safe_float(stock.get("rsi")), 1),
-        "rr":           round(rr_calc, 2),
-        "volume_ratio": round(volume_ratio, 2),
-        "rs_rank":      stock.get("rs_rank", 0),
-        "rs_vs_tasi":   stock.get("rs_vs_tasi", 0),
-        "sector":       stock.get("sector", ""),
-        "source":       "sahmk_api" if from_api else "market_snapshot",
-        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "note":         f"قراءة فنية تعليمية: {' + '.join(reasons[:3])}."
+    result = {
+        "brand":            "مضارب",
+        "mode":             "morning",
+        "stock_name":       stock.get("name", ""),
+        "symbol":           str(stock.get("symbol", "")),
+        "price":            f"{price:.2f}",
+        "entry":            f"{entry:.2f}",
+        "target1":          f"{target1:.2f}",
+        "target2":          f"{target2:.2f}",
+        "stop_loss":        f"{stop_loss:.2f}",
+        "momentum":         momentum,
+        "score":            score,
+        "rsi":              round(rsi, 1),
+        "rr":               round(rr_calc, 2),
+        "volume_ratio":     round(volume_ratio, 2),
+        "rs_rank":          rs_rank,
+        "rs_vs_tasi":       stock.get("rs_vs_tasi", 0),
+        "sector":           sector,
+        "signal_reason":    signal_reason,
+        "news_sentiment":   news_sentiment,
+        "news_summary":     news_summary,
+        "source":           "sahmk_api" if from_api else "market_snapshot",
+        "generated_at":     datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "note":             f"قراءة فنية تعليمية: {signal_reason}.",
     }
+
+    return result
 
 
 def main():
@@ -375,11 +445,12 @@ def main():
             stock["rs_rank"]    = intel_map[sym].get("rs_rank", 0)
             stock["rs_vs_tasi"] = intel_map[sym].get("rs_vs_tasi", 0)
 
+    # تقييم اولي بدون اخبار
     ranked = []
     for stock in stocks:
         if safe_float(stock.get("price")) <= 0 or safe_float(stock.get("volume")) <= 0:
             continue
-        score, reasons, rr, vol_ratio = calculate_score(stock, top_sectors)
+        score, reasons, rr, vol_ratio = calculate_score(stock, top_sectors, 0)
         if score > 0:
             ranked.append({
                 "score": score, "stock": stock,
@@ -388,7 +459,7 @@ def main():
 
     if not ranked:
         for stock in stocks:
-            score, reasons, rr, vol_ratio = calculate_score(stock, top_sectors)
+            score, reasons, rr, vol_ratio = calculate_score(stock, top_sectors, 0)
             ranked.append({
                 "score": score, "stock": stock,
                 "reasons": reasons, "rr": rr, "volume_ratio": vol_ratio
@@ -399,6 +470,33 @@ def main():
 
     ranked.sort(key=lambda x: x["score"], reverse=True)
 
+    # تحليل اخبار افضل 3 أسهم واختيار الافضل بعد الاخبار
+    print(f"\n{'='*60}")
+    print("تحليل اخبار Top 3...")
+
+    from news_analyzer import get_news_analysis
+
+    final_candidates = []
+    for r in ranked[:3]:
+        s         = r["stock"]
+        sym       = str(s.get("symbol",""))
+        name      = s.get("name","")
+        news      = get_news_analysis(sym, name)
+        delta     = news.get("score_delta", 0)
+        new_score = min(r["score"] + delta, 100)
+
+        final_candidates.append({
+            "score":        new_score,
+            "stock":        s,
+            "reasons":      r["reasons"],
+            "rr":           r["rr"],
+            "volume_ratio": r["volume_ratio"],
+            "news":         news,
+        })
+        print(f"  {name[:20]:<20} Score: {r['score']} -> {new_score} (اخبار: {delta:+d})")
+
+    final_candidates.sort(key=lambda x: x["score"], reverse=True)
+
     print(f"\n{'='*60}")
     print("Top 5 TASI:")
     for i, r in enumerate(ranked[:5], 1):
@@ -407,10 +505,11 @@ def main():
               f"Score:{r['score']:>4} RS:{s.get('rs_rank',0):>3} "
               f"Vol:{r['volume_ratio']:.1f}x Sec:{s.get('sector','')}")
 
-    best       = ranked[0]
+    best       = final_candidates[0]
     daily_data = build_daily_json(
         best["stock"], best["score"],
-        best["reasons"], best["rr"], best["volume_ratio"]
+        best["reasons"], best["rr"],
+        best["volume_ratio"], best["news"]
     )
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
@@ -420,9 +519,9 @@ def main():
     print(f"\n Selected: {daily_data['stock_name']} ({daily_data['symbol']})")
     print(f"  Price: {daily_data['price']} | Entry: {daily_data['entry']}")
     print(f"  T1: {daily_data['target1']} | T2: {daily_data['target2']} | SL: {daily_data['stop_loss']}")
-    print(f"  Score: {daily_data['score']} | R:R: {daily_data['rr']} | RS: {daily_data['rs_rank']}")
-    print(f"  Sector: {daily_data['sector']} | Source: {src}")
-    print(f"  Time: {daily_data['generated_at']}")
+    print(f"  Score: {daily_data['score']} | Momentum: {daily_data['momentum']}")
+    print(f"  Signal: {daily_data['signal_reason']}")
+    print(f"  News: {daily_data['news_sentiment']} | Sector: {daily_data['sector']}")
 
     if src == "market_snapshot":
         print("\n  WARNING: using local snapshot")
