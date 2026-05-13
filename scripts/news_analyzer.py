@@ -1,5 +1,265 @@
-1. يسحب إفصاحات تداول للسهم (مجاني)
-2. يرسلها لـ Claude API
-3. Claude يحلل: إيجابي / سلبي / محايد
-4. يضيف للـ Score: +10 أو -10 أو 0
-5. يضيف سبب الأخبار للإشارة
+import os
+import json
+import requests
+from datetime import datetime, timezone, timedelta
+
+CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
+NEWS_FILE      = "data/news_cache.json"
+
+KSA = timezone(timedelta(hours=3))
+
+
+def safe_get(url, headers=None, timeout=10):
+    try:
+        r = requests.get(url, headers=headers or {}, timeout=timeout)
+        if r.status_code == 200:
+            return r.text
+    except Exception as e:
+        print(f"  fetch error {url[:50]}: {e}")
+    return None
+
+
+def fetch_tadawul_disclosures(symbol):
+    """
+    جلب الافصاحات الرسمية من تداول
+    """
+    url = f"https://www.saudiexchange.sa/wps/portal/saudiexchange/newsandreports/company-announcements?companySymbol={symbol}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "ar,en;q=0.9",
+    }
+    html = safe_get(url, headers)
+    if not html:
+        return []
+
+    news = []
+    # استخراج العناوين من HTML
+    import re
+    # نبحث عن عناوين الافصاحات
+    patterns = [
+        r'class="announcement-title[^"]*"[^>]*>([^<]+)<',
+        r'<td[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)<',
+        r'<h\d[^>]*>([^<]{20,200})</h\d>',
+    ]
+    for pattern in patterns:
+        matches = re.findall(pattern, html, re.IGNORECASE)
+        for m in matches:
+            text = m.strip()
+            if len(text) > 15 and any(c in text for c in 'ابتثجحخدذرزسشصضطظعغفقكلمنهوي'):
+                news.append(text)
+
+    return news[:5]
+
+
+def fetch_argaam_news(symbol):
+    """
+    جلب اخبار من Argaam
+    """
+    url = f"https://www.argaam.com/ar/stocks/stockdetail/newslist/{symbol}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+        "Accept": "text/html",
+        "Accept-Language": "ar",
+        "Referer": "https://www.argaam.com/",
+    }
+    html = safe_get(url, headers)
+    if not html:
+        return []
+
+    news = []
+    import re
+    patterns = [
+        r'class="news-title[^"]*"[^>]*>([^<]+)<',
+        r'class="article-title[^"]*"[^>]*>([^<]+)<',
+        r'"title"\s*:\s*"([^"]{20,200})"',
+    ]
+    for pattern in patterns:
+        matches = re.findall(pattern, html, re.IGNORECASE)
+        for m in matches:
+            text = m.strip()
+            if len(text) > 15 and any(c in text for c in 'ابتثجحخدذرزسشصضطظعغفقكلمنهوي'):
+                news.append(text)
+
+    return news[:5]
+
+
+def fetch_mubasher_news(symbol):
+    """
+    جلب اخبار من مباشر
+    """
+    url = f"https://www.mubasher.info/countries/sa/stocks/{symbol}/news"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+        "Accept": "text/html",
+        "Accept-Language": "ar",
+    }
+    html = safe_get(url, headers)
+    if not html:
+        return []
+
+    news = []
+    import re
+    patterns = [
+        r'class="[^"]*news[^"]*title[^"]*"[^>]*>([^<]+)<',
+        r'class="[^"]*headline[^"]*"[^>]*>([^<]+)<',
+        r'"headline"\s*:\s*"([^"]{20,200})"',
+    ]
+    for pattern in patterns:
+        matches = re.findall(pattern, html, re.IGNORECASE)
+        for m in matches:
+            text = m.strip()
+            if len(text) > 15 and any(c in text for c in 'ابتثجحخدذرزسشصضطظعغفقكلمنهوي'):
+                news.append(text)
+
+    return news[:5]
+
+
+def analyze_with_claude(symbol, stock_name, news_items):
+    """
+    Claude يحلل الاخبار ويعطي:
+    - sentiment: positive / negative / neutral
+    - score_delta: +10 / -10 / 0
+    - reason: سبب التقييم
+    - summary: ملخص الاخبار
+    """
+    if not news_items:
+        return {
+            "sentiment":   "neutral",
+            "score_delta": 0,
+            "reason":      "لا توجد اخبار حديثة",
+            "summary":     "",
+        }
+
+    news_text = "\n".join([f"- {n}" for n in news_items])
+
+    prompt = f"""
+انت محلل مالي متخصص في سوق الاسهم السعودي.
+
+السهم: {stock_name} ({symbol})
+
+الاخبار والافصاحات الاخيرة:
+{news_text}
+
+حلل هذه الاخبار وأجب بـ JSON فقط بهذا الشكل بالضبط:
+{{
+  "sentiment": "positive" او "negative" او "neutral",
+  "score_delta": رقم بين -15 و +15,
+  "reason": "جملة واحدة عربية تشرح سبب التقييم",
+  "summary": "ملخص عربي قصير للاخبار المؤثرة"
+}}
+
+قواعد:
+- positive + score_delta양 (+5 الى +15): اخبار ارباح، توزيعات، عقود، توسع
+- negative + score_delta سالب (-5 الى -15): خسائر، غرامات، مشاكل تنظيمية
+- neutral + score_delta صفر: اخبار عامة لا تؤثر على السعر
+- اجب بـ JSON فقط بدون اي نص اضافي
+"""
+
+    try:
+        response = requests.post(
+            CLAUDE_API_URL,
+            headers={"Content-Type": "application/json"},
+            json={
+                "model":      "claude-sonnet-4-20250514",
+                "max_tokens": 300,
+                "messages":   [{"role": "user", "content": prompt}]
+            },
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            data    = response.json()
+            content = data["content"][0]["text"].strip()
+
+            # تنظيف الـ JSON
+            import re
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+                # تأكد من القيم
+                result["score_delta"] = max(-15, min(15, int(result.get("score_delta", 0))))
+                return result
+
+    except Exception as e:
+        print(f"  Claude API error: {e}")
+
+    return {
+        "sentiment":   "neutral",
+        "score_delta": 0,
+        "reason":      "تعذر تحليل الاخبار",
+        "summary":     "",
+    }
+
+
+def get_news_analysis(symbol, stock_name):
+    """
+    الدالة الرئيسية — تجمع الاخبار وتحللها
+    """
+    print(f"  جلب اخبار {stock_name} ({symbol})...")
+
+    # جلب من مصادر متعددة
+    news = []
+    news += fetch_tadawul_disclosures(symbol)
+    if len(news) < 3:
+        news += fetch_argaam_news(symbol)
+    if len(news) < 3:
+        news += fetch_mubasher_news(symbol)
+
+    # إزالة التكرار
+    seen    = set()
+    unique  = []
+    for n in news:
+        if n not in seen:
+            seen.add(n)
+            unique.append(n)
+
+    print(f"  وجدنا {len(unique)} خبر")
+
+    if not unique:
+        return {
+            "sentiment":   "neutral",
+            "score_delta": 0,
+            "reason":      "لا توجد اخبار حديثة",
+            "summary":     "",
+            "news_count":  0,
+        }
+
+    # تحليل بـ Claude
+    analysis = analyze_with_claude(symbol, stock_name, unique[:5])
+    analysis["news_count"] = len(unique)
+    analysis["news_items"] = unique[:3]
+
+    sentiment_ar = {
+        "positive": "إيجابي ✅",
+        "negative": "سلبي ❌",
+        "neutral":  "محايد ➖",
+    }.get(analysis["sentiment"], "محايد")
+
+    delta = analysis["score_delta"]
+    sign  = "+" if delta >= 0 else ""
+    print(f"  الاخبار: {sentiment_ar} | تأثير Score: {sign}{delta}")
+    if analysis.get("reason"):
+        print(f"  السبب: {analysis['reason']}")
+
+    # حفظ في cache
+    cache = {
+        "symbol":      symbol,
+        "generated_at": datetime.now(KSA).strftime("%Y-%m-%d %H:%M"),
+        "analysis":    analysis,
+    }
+    try:
+        with open(NEWS_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    return analysis
+
+
+if __name__ == "__main__":
+    import sys
+    sym  = sys.argv[1] if len(sys.argv) > 1 else "2222"
+    name = sys.argv[2] if len(sys.argv) > 2 else "اختبار"
+    result = get_news_analysis(sym, name)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
