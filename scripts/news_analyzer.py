@@ -1,10 +1,12 @@
 import os
 import json
+import re
 import requests
 from datetime import datetime, timezone, timedelta
 
-CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
-NEWS_FILE      = "data/news_cache.json"
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+CLAUDE_API_URL    = "https://api.anthropic.com/v1/messages"
+NEWS_FILE         = "data/news_cache.json"
 
 KSA = timezone(timedelta(hours=3))
 
@@ -26,10 +28,7 @@ def fetch_tadawul_disclosures(symbol):
         f"?companySymbol={symbol}"
     )
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-            "AppleWebKit/605.1.15"
-        ),
+        "User-Agent":      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
         "Accept":          "text/html,application/xhtml+xml",
         "Accept-Language": "ar,en;q=0.9",
     }
@@ -37,7 +36,6 @@ def fetch_tadawul_disclosures(symbol):
     if not html:
         return []
 
-    import re
     news = []
     patterns = [
         r'class="announcement-title[^"]*"[^>]*>([^<]+)<',
@@ -45,12 +43,9 @@ def fetch_tadawul_disclosures(symbol):
         r'<h\d[^>]*>([^<]{20,200})</h\d>',
     ]
     for pattern in patterns:
-        matches = re.findall(pattern, html, re.IGNORECASE)
-        for m in matches:
+        for m in re.findall(pattern, html, re.IGNORECASE):
             text = m.strip()
-            if len(text) > 15 and any(
-                c in text for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"
-            ):
+            if len(text) > 15 and any(c in text for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"):
                 news.append(text)
     return news[:5]
 
@@ -58,10 +53,7 @@ def fetch_tadawul_disclosures(symbol):
 def fetch_argaam_news(symbol):
     url = f"https://www.argaam.com/ar/stocks/stockdetail/newslist/{symbol}"
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-            "AppleWebKit/605.1.15"
-        ),
+        "User-Agent":      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
         "Accept":          "text/html",
         "Accept-Language": "ar",
         "Referer":         "https://www.argaam.com/",
@@ -70,7 +62,6 @@ def fetch_argaam_news(symbol):
     if not html:
         return []
 
-    import re
     news = []
     patterns = [
         r'class="news-title[^"]*"[^>]*>([^<]+)<',
@@ -78,12 +69,9 @@ def fetch_argaam_news(symbol):
         r'"title"\s*:\s*"([^"]{20,200})"',
     ]
     for pattern in patterns:
-        matches = re.findall(pattern, html, re.IGNORECASE)
-        for m in matches:
+        for m in re.findall(pattern, html, re.IGNORECASE):
             text = m.strip()
-            if len(text) > 15 and any(
-                c in text for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"
-            ):
+            if len(text) > 15 and any(c in text for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"):
                 news.append(text)
     return news[:5]
 
@@ -91,10 +79,7 @@ def fetch_argaam_news(symbol):
 def fetch_mubasher_news(symbol):
     url = f"https://www.mubasher.info/countries/sa/stocks/{symbol}/news"
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-            "AppleWebKit/605.1.15"
-        ),
+        "User-Agent":      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
         "Accept":          "text/html",
         "Accept-Language": "ar",
     }
@@ -102,7 +87,6 @@ def fetch_mubasher_news(symbol):
     if not html:
         return []
 
-    import re
     news = []
     patterns = [
         r'class="[^"]*news[^"]*title[^"]*"[^>]*>([^<]+)<',
@@ -110,12 +94,9 @@ def fetch_mubasher_news(symbol):
         r'"headline"\s*:\s*"([^"]{20,200})"',
     ]
     for pattern in patterns:
-        matches = re.findall(pattern, html, re.IGNORECASE)
-        for m in matches:
+        for m in re.findall(pattern, html, re.IGNORECASE):
             text = m.strip()
-            if len(text) > 15 and any(
-                c in text for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"
-            ):
+            if len(text) > 15 and any(c in text for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"):
                 news.append(text)
     return news[:5]
 
@@ -126,6 +107,15 @@ def analyze_with_claude(symbol, stock_name, news_items):
             "sentiment":   "neutral",
             "score_delta": 0,
             "reason":      "لا توجد اخبار حديثة",
+            "summary":     "",
+        }
+
+    if not ANTHROPIC_API_KEY:
+        print("  ANTHROPIC_API_KEY missing - skipping news analysis")
+        return {
+            "sentiment":   "neutral",
+            "score_delta": 0,
+            "reason":      "",
             "summary":     "",
         }
 
@@ -157,7 +147,11 @@ def analyze_with_claude(symbol, stock_name, news_items):
     try:
         response = requests.post(
             CLAUDE_API_URL,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type":      "application/json",
+                "anthropic-version": "2023-06-01",
+                "x-api-key":         ANTHROPIC_API_KEY,
+            },
             json={
                 "model":      "claude-sonnet-4-20250514",
                 "max_tokens": 300,
@@ -169,15 +163,13 @@ def analyze_with_claude(symbol, stock_name, news_items):
         if response.status_code == 200:
             data    = response.json()
             content = data["content"][0]["text"].strip()
-
-            import re
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
-            if json_match:
-                result = json.loads(json_match.group())
-                result["score_delta"] = max(
-                    -15, min(15, int(result.get("score_delta", 0)))
-                )
+            match   = re.search(r'\{.*\}', content, re.DOTALL)
+            if match:
+                result = json.loads(match.group())
+                result["score_delta"] = max(-15, min(15, int(result.get("score_delta", 0))))
                 return result
+        else:
+            print(f"  Claude news API status: {response.status_code}")
 
     except Exception as e:
         print(f"  Claude API error: {e}")
