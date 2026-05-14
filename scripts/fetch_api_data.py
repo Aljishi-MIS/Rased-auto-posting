@@ -9,35 +9,10 @@ API_URL           = os.environ.get(“API_URL”, “https://app.sahmk.sa/api/v1
 ANTHROPIC_API_KEY = os.environ.get(“ANTHROPIC_API_KEY”, “”)
 
 SNAPSHOT_FILE = “data/market_snapshot.json”
+INTEL_FILE    = “data/market_intel.json”
 OUTPUT_FILE   = “data/daily.json”
 
 HEADERS = {“X-API-Key”: API_KEY} if API_KEY else {}
-
-TASI_SYMBOLS = [
-“1010”,“1020”,“1030”,“1050”,“1060”,“1080”,“1120”,“1150”,“1180”,“1210”,
-“1211”,“1212”,“1213”,“1214”,“1301”,“1302”,“1303”,“1304”,“1320”,“1321”,
-“2010”,“2020”,“2030”,“2040”,“2050”,“2060”,“2070”,“2080”,“2082”,“2083”,
-“2090”,“2100”,“2110”,“2120”,“2130”,“2140”,“2150”,“2160”,“2170”,“2180”,
-“2190”,“2200”,“2210”,“2220”,“2222”,“2223”,“2230”,“2240”,“2250”,“2290”,
-“2310”,“2320”,“2330”,“2340”,“2350”,“2360”,“2370”,“2380”,“2381”,“2382”,
-“4001”,“4002”,“4003”,“4004”,“4005”,“4006”,“4007”,“4008”,“4009”,“4010”,
-“4011”,“4012”,“4013”,“4014”,“4015”,“4016”,“4017”,“4018”,“4019”,“4020”,
-“4021”,“4030”,“4031”,“4040”,“4050”,“4051”,“4061”,“4100”,“4110”,“4130”,
-“4140”,“4141”,“4142”,“4143”,“4144”,“4150”,“4160”,“4161”,“4162”,“4163”,
-“4164”,“4170”,“4180”,“4190”,“4191”,“4192”,“4193”,“4200”,“4210”,“4220”,
-“4230”,“4240”,“4250”,“4261”,“4270”,“4280”,“4290”,“4291”,“4300”,
-“4310”,“4320”,“4321”,“4322”,“4323”,“4324”,“4325”,“4326”,“4327”,“4328”,
-“4330”,“4331”,“4332”,“4333”,“4334”,“4335”,“4336”,“4337”,“4338”,“4339”,
-“4340”,“4341”,“4342”,“4344”,“4345”,“4346”,“4347”,“4348”,“4349”,
-“5010”,“5020”,“5110”,“6001”,“6002”,“6010”,“6013”,“6014”,“6015”,“6020”,
-“6040”,“6050”,“6060”,“6070”,“7010”,“7020”,“7030”,“7040”,“7203”,“7204”,
-“8010”,“8020”,“8030”,“8040”,“8050”,“8060”,“8070”,“8100”,“8120”,“8150”,
-“8160”,“8170”,“8180”,“8190”,“8200”,“8210”,“8230”,“8240”,“8250”,“8260”,
-“8270”,“8280”,“8300”,“8310”,“8311”,“8320”,“8330”,“8340”,
-“9516”,“9526”,“9527”,“9528”,“9529”,“9536”,“9543”,“9544”,“9545”,“9546”,
-“9547”,“9548”,“9549”,“9553”,“9554”,“9555”,“9556”,“9557”,“9558”,“9559”,
-“9560”,“9561”,“9562”,“9563”,“9564”,“9565”,“9566”,“9567”,“9568”,
-]
 
 SECTORS = {
 “البنوك”:         [“1010”,“1020”,“1030”,“1050”,“1060”,“1080”,“1120”,“1150”],
@@ -57,10 +32,9 @@ SECTORS = {
 “8120”,“8150”,“8160”,“8170”,“8180”,“8190”,“8200”,“8210”,
 “8230”,“8240”,“8250”,“8260”,“8270”,“8280”,“8300”,“8310”,
 “8311”,“8320”,“8330”,“8340”],
-“الاستثمار”:      [“1111”,“4280”,“4290”,“4291”,“4310”,“4349”,
-“4330”,“4331”,“4332”,“4333”,“4334”,“4335”,“4336”,“4337”,
-“4338”,“4339”,“4340”,“4341”,“4342”,“4344”,“4345”,“4346”,
-“4347”,“4348”],
+“الاستثمار”:      [“1111”,“4280”,“4290”,“4291”,“4349”,“4330”,“4331”,
+“4332”,“4333”,“4334”,“4335”,“4336”,“4337”,“4338”,“4339”,
+“4340”,“4341”,“4342”,“4344”,“4345”,“4346”,“4347”,“4348”],
 “التقنية”:        [“9516”,“9526”,“9527”,“9528”,“9529”,“9536”,“9543”,“9544”,
 “9545”,“9546”,“9547”,“9548”,“9549”,“9553”,“9554”,“9555”,
 “9556”,“9557”,“9558”,“9559”,“9560”,“9561”,“9562”,“9563”,
@@ -72,7 +46,6 @@ SECTORS = {
 “الترفيه”:        [“4110”,“4130”,“4140”,“4141”,“4142”,“4143”,“4144”,
 “4160”,“4161”,“4162”,“4163”,“4164”,“4170”,“4180”],
 “النقل”:          [“1301”,“1302”,“1303”,“1304”,“1320”,“1321”,“5010”,“5020”],
-“الزراعة”:        [“6001”,“6002”,“6010”,“6013”,“6014”,“6015”],
 }
 
 def safe_float(value, default=0.0):
@@ -120,95 +93,126 @@ except Exception as e:
 print(f”  error {endpoint}: {e}”)
 return None
 
-def fetch_market_summary():
-data = get(”/market/summary/”, {“index”: “TASI”})
-if data:
-val = data.get(“index_value”, “”)
-chg = safe_float(data.get(“index_change_percent”, 0))
-print(f”  TASI -> {val} ({chg:+.2f}%)”)
-return data
-
-def fetch_all_stocks():
-seen = {}
-for endpoint, key in [
-(”/market/gainers/”, “gainers”),
-(”/market/volume/”,  “stocks”),
-]:
-data = get(endpoint, {“limit”: 50, “index”: “TASI”})
-if data:
-items = data if isinstance(data, list) else data.get(key, data.get(“data”, []))
-for s in items:
-sym = str(s.get(“symbol”, “”))
-if sym and sym not in seen:
-seen[sym] = s
+def load_all_stocks_from_intel():
+try:
+with open(INTEL_FILE, “r”, encoding=“utf-8”) as f:
+intel = json.load(f)
 
 ```
-print(f"  gainers+volume -> {len(seen)}")
-remaining = [sym for sym in TASI_SYMBOLS if sym not in seen]
-print(f"  fetching {len(remaining)} remaining stocks...")
+    all_stocks  = intel.get("top_stocks", [])
+    top_sectors = intel.get("top_sectors", [])
 
-for sym in remaining:
-    data = get(f"/quote/{sym}/")
+    if not all_stocks:
+        print("  market_intel.json فارغ")
+        return [], []
+
+    stocks = []
+    for s in all_stocks:
+        price = safe_float(s.get("price", 0))
+        if price <= 0:
+            continue
+        sym = str(s.get("symbol", ""))
+        vol = safe_float(s.get("volume", 0))
+
+        stocks.append({
+            "name":           s.get("name", "") or sym,
+            "symbol":         sym,
+            "price":          price,
+            "high":           price * 1.01,
+            "low":            price * 0.99,
+            "volume":         vol,
+            "avg_volume":     vol * 0.7,
+            "change_percent": safe_float(s.get("change_pct", 0)),
+            "resistance":     price * 1.01,
+            "support":        price * 0.99,
+            "rsi":            max(20, min(80, 50 + safe_float(s.get("change_pct", 0)) * 3)),
+            "rs_rank":        s.get("rs_rank", 0),
+            "rs_vs_tasi":     s.get("rs_vs_tasi", 0),
+            "sector":         s.get("sector") or get_sector(sym),
+        })
+
+    print(f"  قراءة {len(stocks)} سهم من market_intel.json ✅")
+    return stocks, top_sectors
+
+except FileNotFoundError:
+    print("  market_intel.json غير موجود — fallback للـ API")
+    return [], []
+except Exception as e:
+    print(f"  market_intel.json error: {e}")
+    return [], []
+```
+
+def enrich_top10_with_live_data(ranked):
+print(f”\n  تحديث أفضل 10 ببيانات حية…”)
+updated = 0
+
+```
+for r in ranked[:10]:
+    stock = r["stock"]
+    sym   = stock.get("symbol", "")
+    data  = get(f"/quote/{sym}/")
+
     if data:
         s = data if isinstance(data, dict) else (data[0] if isinstance(data, list) and data else None)
-        if s and safe_float(s.get("price") or s.get("close")) > 0:
-            seen[sym] = s
+        if s:
+            price = safe_float(s.get("price") or s.get("close"))
+            if price > 0:
+                stock["price"]          = price
+                stock["high"]           = safe_float(s.get("high"),   price * 1.01)
+                stock["low"]            = safe_float(s.get("low"),    price * 0.99)
+                stock["volume"]         = safe_float(s.get("volume"),  stock["volume"])
+                stock["avg_volume"]     = safe_float(s.get("avg_volume"), stock["volume"] * 0.7)
+                stock["change_percent"] = safe_float(s.get("change_percent") or s.get("change_pct"))
+                stock["resistance"]     = safe_float(s.get("resistance"), stock["high"])
+                stock["support"]        = safe_float(s.get("support"),    stock["low"])
+                stock["rsi"]            = safe_float(s.get("rsi"), stock["rsi"])
+                updated += 1
 
-print(f"  total: {len(seen)}")
-return list(seen.values())
+print(f"  تم تحديث {updated} سهم ✅")
+return ranked
 ```
 
-def normalize(raw):
-price      = safe_float(raw.get(“price”) or raw.get(“close”))
-high       = safe_float(raw.get(“high”),   price * 1.01)
-low        = safe_float(raw.get(“low”),    price * 0.99)
-volume     = safe_float(raw.get(“volume”))
-change_pct = safe_float(raw.get(“change_percent”) or raw.get(“change_pct”))
-avg_volume = safe_float(raw.get(“avg_volume”), volume * 0.70)
-resistance = safe_float(raw.get(“resistance”), high)
-support    = safe_float(raw.get(“support”),    low)
-rsi        = safe_float(raw.get(“rsi”), max(20, min(80, 50 + change_pct * 3)))
-sym        = str(raw.get(“symbol”, “”))
+def fallback_from_api():
+print(”\n  Fallback: جلب من API مباشرة…”)
+seen = {}
 
 ```
-return {
-    "name":           raw.get("name") or raw.get("name_ar") or sym,
-    "symbol":         sym,
-    "price":          price,
-    "high":           high,
-    "low":            low,
-    "volume":         volume,
-    "avg_volume":     avg_volume,
-    "change_percent": change_pct,
-    "resistance":     resistance,
-    "support":        support,
-    "rsi":            rsi,
-    "rs_rank":        0,
-    "rs_vs_tasi":     0,
-    "sector":         get_sector(sym),
-}
-```
+for endpoint, key in [
+    ("/market/gainers/", "gainers"),
+    ("/market/volume/",  "stocks"),
+]:
+    data = get(endpoint, {"limit": 50, "index": "TASI"})
+    if data:
+        items = data if isinstance(data, list) else data.get(key, data.get("data", []))
+        for s in items:
+            sym = str(s.get("symbol", ""))
+            if sym and sym not in seen:
+                seen[sym] = s
 
-def load_market_data():
 stocks = []
-if not API_KEY:
-print(“API_KEY missing”)
-else:
-print(f”\n fetching ALL TASI from: {API_URL}\n”)
-fetch_market_summary()
-all_raw = fetch_all_stocks()
-if all_raw:
-stocks = [normalize(s) for s in all_raw
-if safe_float(s.get(“price”) or s.get(“close”)) > 0]
-print(f”\n normalized: {len(stocks)}”)
+for sym, s in seen.items():
+    price = safe_float(s.get("price") or s.get("close"))
+    if price > 0:
+        vol = safe_float(s.get("volume"))
+        stocks.append({
+            "name":           s.get("name") or s.get("name_ar") or sym,
+            "symbol":         sym,
+            "price":          price,
+            "high":           safe_float(s.get("high"),   price * 1.01),
+            "low":            safe_float(s.get("low"),    price * 0.99),
+            "volume":         vol,
+            "avg_volume":     safe_float(s.get("avg_volume"), vol * 0.7),
+            "change_percent": safe_float(s.get("change_percent") or s.get("change_pct")),
+            "resistance":     safe_float(s.get("resistance"), safe_float(s.get("high"), price * 1.01)),
+            "support":        safe_float(s.get("support"),    safe_float(s.get("low"),  price * 0.99)),
+            "rsi":            safe_float(s.get("rsi"), 50),
+            "rs_rank":        0,
+            "rs_vs_tasi":     0,
+            "sector":         get_sector(sym),
+        })
 
-```
-if len(stocks) < 3:
-    print("\n Fallback -> market_snapshot.json")
-    with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-    stocks = [normalize(s) for s in raw]
-return stocks
+print(f"  API fallback: {len(stocks)} سهم")
+return stocks, []
 ```
 
 def calc_targets(price, high, low, resistance, support, change_pct):
@@ -271,6 +275,24 @@ if not parts:
     parts = reasons[:2]
 
 return " + ".join(parts[:4])
+```
+
+def get_ml_score(symbol):
+“””
+يستخدم نموذج ML للتنبؤ باحتمال نجاح الإشارة
+“””
+try:
+import sys, os as _os
+sys.path.insert(0, _os.path.dirname(_os.path.abspath(**file**)))
+from ml_trainer import predict, fetch_historical as ml_fetch
+
+```
+    hist = ml_fetch(symbol, period=20)
+    if hist:
+        return predict(symbol, hist)
+except Exception:
+    pass
+return 50.0
 ```
 
 def calculate_score(stock, top_sectors=None, news_delta=0):
@@ -343,6 +365,15 @@ elif rs_vs_tasi < -3:
 if top_sectors and sector in top_sectors:
     score += 10; reasons.append(f"قطاع {sector} متصدر اليوم")
 
+# ML Score
+ml_score = get_ml_score(str(stock.get("symbol", "")))
+ml_delta = int((ml_score - 50) * 0.3)
+score   += ml_delta
+if ml_score >= 70:
+    reasons.append(f"ML {ml_score:.0f}% احتمال نجاح")
+elif ml_score <= 30:
+    reasons.append(f"ML {ml_score:.0f}% احتمال ضعيف")
+
 score += news_delta
 score  = min(score, 100)
 return score, reasons, rr, volume_ratio
@@ -407,12 +438,11 @@ if not candidates:
 return None, {}
 if len(candidates) == 1:
 return candidates[0], {}
+if not ANTHROPIC_API_KEY:
+print(”  ANTHROPIC_API_KEY missing - skipping Claude review”)
+return candidates[0], {}
 
 ```
-if not ANTHROPIC_API_KEY:
-    print("  ANTHROPIC_API_KEY missing - skipping Claude review")
-    return candidates[0], {}
-
 summaries = []
 for i, c in enumerate(candidates[:3], 1):
     s = c["stock"]
@@ -486,7 +516,7 @@ try:
                 print(f"  تحذير         : {result.get('warning','')}")
             return candidates[idx], result
     else:
-        print(f"  Claude API status: {response.status_code} | {response.text[:100]}")
+        print(f"  Claude API status: {response.status_code}")
 
 except Exception as e:
     print(f"  Claude review error: {e}")
@@ -502,33 +532,34 @@ if not is_market_open():
     print("السوق مغلق الان - لا يتم النشر")
     sys.exit(1)
 
-intel       = {}
-intel_map   = {}
+# الخطوة 1 — market_intelligence يحلل 220+ سهم
 top_sectors = []
-
 try:
     import os as _os
     sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
     from market_intelligence import run as run_intel
     intel       = run_intel() or {}
     top_sectors = intel.get("top_sectors", [])
-    for s in intel.get("top_stocks", []):
-        intel_map[s["symbol"]] = s
-    print(f"\n Market Intelligence: {len(intel_map)} | Sectors: {', '.join(top_sectors)}")
+    count       = len(intel.get("top_stocks", []))
+    print(f"\n Market Intelligence: {count} سهم | Sectors: {', '.join(top_sectors)}")
 except Exception as e:
     print(f"\n Market Intelligence error: {e}")
 
-stocks = load_market_data()
+# الخطوة 2 — قراءة جميع الأسهم من market_intel.json
+stocks, intel_sectors = load_all_stocks_from_intel()
+if intel_sectors:
+    top_sectors = intel_sectors
 
-for stock in stocks:
-    sym = str(stock.get("symbol", ""))
-    if sym in intel_map:
-        stock["rs_rank"]    = intel_map[sym].get("rs_rank", 0)
-        stock["rs_vs_tasi"] = intel_map[sym].get("rs_vs_tasi", 0)
+if len(stocks) < 5:
+    stocks, _ = fallback_from_api()
 
+if not stocks:
+    raise RuntimeError("no stocks found")
+
+# الخطوة 3 — تقييم جميع الأسهم
 ranked = []
 for stock in stocks:
-    if safe_float(stock.get("price")) <= 0 or safe_float(stock.get("volume")) <= 0:
+    if safe_float(stock.get("price")) <= 0:
         continue
     score, reasons, rr, vol_ratio = calculate_score(stock, top_sectors, 0)
     if score > 0:
@@ -552,9 +583,12 @@ if not ranked:
         })
 
 if not ranked:
-    raise RuntimeError("no stocks found")
+    raise RuntimeError("no stocks after scoring")
 
 ranked.sort(key=lambda x: x["score"], reverse=True)
+
+# الخطوة 4 — تحديث أفضل 10 ببيانات حية
+ranked = enrich_top10_with_live_data(ranked)
 
 print(f"\n{'='*60}")
 print("Top 5 TASI:")
@@ -564,15 +598,15 @@ for i, r in enumerate(ranked[:5], 1):
           f"Score:{r['score']:>4} RS:{s.get('rs_rank',0):>3} "
           f"Vol:{r['volume_ratio']:.1f}x Sec:{s.get('sector','')}")
 
+# الخطوة 5 — أخبار + Claude
 print(f"\n{'='*60}")
-print("تحليل اخبار + مراجعة Claude...")
+print("اخبار + Claude...")
 
 try:
     from news_analyzer import get_news_analysis
 except ImportError:
     def get_news_analysis(sym, name):
-        return {"sentiment": "neutral", "score_delta": 0,
-                "reason": "", "summary": ""}
+        return {"sentiment": "neutral", "score_delta": 0, "reason": "", "summary": ""}
 
 final_candidates = []
 for r in ranked[:3]:
@@ -591,7 +625,7 @@ for r in ranked[:3]:
         "volume_ratio": r["volume_ratio"],
         "news":         news,
     })
-    print(f"  {name[:20]:<20} Score: {r['score']} -> {new_score} (اخبار: {delta:+d})")
+    print(f"  {name[:20]:<20} {r['score']} -> {new_score} (اخبار: {delta:+d})")
 
 final_candidates.sort(key=lambda x: x["score"], reverse=True)
 
@@ -609,24 +643,21 @@ daily_data = build_daily_json(
 )
 
 if claude_reason:
-    daily_data["note"]              = f"قراءة فنية تعليمية: {claude_reason}."
+    daily_data["note"]           = f"قراءة فنية تعليمية: {claude_reason}."
 if claude_note:
-    daily_data["claude_note"]       = claude_note
+    daily_data["claude_note"]    = claude_note
 if claude_warning:
-    daily_data["claude_warning"]    = claude_warning
-daily_data["claude_confidence"]     = claude_conf
+    daily_data["claude_warning"] = claude_warning
+daily_data["claude_confidence"]  = claude_conf
 
 with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
     json.dump(daily_data, f, ensure_ascii=False, indent=2)
 
-print(f"\n Selected   : {daily_data['stock_name']} ({daily_data['symbol']})")
-print(f"  Price     : {daily_data['price']} | Entry: {daily_data['entry']}")
-print(f"  T1        : {daily_data['target1']} | T2: {daily_data['target2']} | SL: {daily_data['stop_loss']}")
+print(f"\n{'='*60}")
+print(f" Selected   : {daily_data['stock_name']} ({daily_data['symbol']})")
 print(f"  Score     : {daily_data['score']} | Momentum: {daily_data['momentum']}")
+print(f"  Entry     : {daily_data['entry']} | T1: {daily_data['target1']} | SL: {daily_data['stop_loss']}")
 print(f"  Claude    : {claude_reason}")
-print(f"  Confidence: {claude_conf}")
-if claude_warning:
-    print(f"  Warning   : {claude_warning}")
 print(f"  Sector    : {daily_data['sector']} | Source: {daily_data['source']}")
 
 if daily_data.get("source") == "market_snapshot":
