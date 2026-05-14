@@ -101,8 +101,8 @@ def is_market_open():
     t       = now.hour * 60 + now.minute
     print(f"  Market check: {now.strftime('%H:%M')} KSA | weekday={weekday} | t={t}")
     market_days  = [6, 0, 1, 2, 3]
-    market_open  = 9 * 60 + 30
-    market_close = 15 * 60 + 30
+    market_open  = 10 * 60 + 0    # 10:00
+    market_close = 15 * 60 + 0    # 15:00
     is_open = weekday in market_days and market_open <= t <= market_close
     print(f"  Market open: {is_open}")
     return is_open
