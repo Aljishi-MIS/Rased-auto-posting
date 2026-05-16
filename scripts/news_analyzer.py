@@ -10,15 +10,43 @@ NEWS_FILE         = "data/news_cache.json"
 
 KSA = timezone(timedelta(hours=3))
 
+NEUTRAL_RESULT = {
+    "sentiment":   "neutral",
+    "score_delta": 0,
+    "reason":      "لا توجد اخبار حديثة",
+    "summary":     "",
+    "news_count":  0,
+}
+
 
 def safe_get(url, headers=None, timeout=10):
     try:
         r = requests.get(url, headers=headers or {}, timeout=timeout)
-        if r.status_code == 200:
+        if r.status_code == 200 and r.text:
             return r.text
     except Exception as e:
         print(f"  fetch error {url[:50]}: {e}")
     return None
+
+
+def is_arabic(text):
+    return any(c in text for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي")
+
+
+def extract_news_from_html(html, patterns):
+    """✅ إصلاح: دالة موحدة تستخرج الأخبار وتتحقق من صحتها"""
+    if not html:
+        return []
+    news = []
+    seen = set()
+    for pattern in patterns:
+        for m in re.findall(pattern, html, re.IGNORECASE | re.DOTALL):
+            text = re.sub(r'<[^>]+>', '', m).strip()
+            text = re.sub(r'\s+', ' ', text)
+            if len(text) > 15 and is_arabic(text) and text not in seen:
+                seen.add(text)
+                news.append(text)
+    return news[:5]
 
 
 def fetch_tadawul_disclosures(symbol):
@@ -33,21 +61,14 @@ def fetch_tadawul_disclosures(symbol):
         "Accept-Language": "ar,en;q=0.9",
     }
     html = safe_get(url, headers)
-    if not html:
-        return []
-
-    news = []
     patterns = [
         r'class="announcement-title[^"]*"[^>]*>([^<]+)<',
-        r'<td[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)<',
+        r'<td[^>]*class="[^"]*title[^"]*"[^>]*>([^<]{15,200})<',
         r'<h\d[^>]*>([^<]{20,200})</h\d>',
     ]
-    for pattern in patterns:
-        for m in re.findall(pattern, html, re.IGNORECASE):
-            text = m.strip()
-            if len(text) > 15 and any(c in text for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"):
-                news.append(text)
-    return news[:5]
+    result = extract_news_from_html(html, patterns)
+    print(f"  تداول: {len(result)} خبر")
+    return result
 
 
 def fetch_argaam_news(symbol):
@@ -59,21 +80,14 @@ def fetch_argaam_news(symbol):
         "Referer":         "https://www.argaam.com/",
     }
     html = safe_get(url, headers)
-    if not html:
-        return []
-
-    news = []
     patterns = [
         r'class="news-title[^"]*"[^>]*>([^<]+)<',
         r'class="article-title[^"]*"[^>]*>([^<]+)<',
         r'"title"\s*:\s*"([^"]{20,200})"',
     ]
-    for pattern in patterns:
-        for m in re.findall(pattern, html, re.IGNORECASE):
-            text = m.strip()
-            if len(text) > 15 and any(c in text for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"):
-                news.append(text)
-    return news[:5]
+    result = extract_news_from_html(html, patterns)
+    print(f"  أرقام: {len(result)} خبر")
+    return result
 
 
 def fetch_mubasher_news(symbol):
@@ -84,45 +98,28 @@ def fetch_mubasher_news(symbol):
         "Accept-Language": "ar",
     }
     html = safe_get(url, headers)
-    if not html:
-        return []
-
-    news = []
     patterns = [
         r'class="[^"]*news[^"]*title[^"]*"[^>]*>([^<]+)<',
         r'class="[^"]*headline[^"]*"[^>]*>([^<]+)<',
         r'"headline"\s*:\s*"([^"]{20,200})"',
     ]
-    for pattern in patterns:
-        for m in re.findall(pattern, html, re.IGNORECASE):
-            text = m.strip()
-            if len(text) > 15 and any(c in text for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"):
-                news.append(text)
-    return news[:5]
+    result = extract_news_from_html(html, patterns)
+    print(f"  مباشر: {len(result)} خبر")
+    return result
 
 
 def analyze_with_claude(symbol, stock_name, news_items):
+    """✅ إصلاح: معالجة أفضل للحالات الفارغة وأخطاء API"""
     if not news_items:
-        return {
-            "sentiment":   "neutral",
-            "score_delta": 0,
-            "reason":      "لا توجد اخبار حديثة",
-            "summary":     "",
-        }
+        return NEUTRAL_RESULT.copy()
 
     if not ANTHROPIC_API_KEY:
-        print("  ANTHROPIC_API_KEY missing - skipping news analysis")
-        return {
-            "sentiment":   "neutral",
-            "score_delta": 0,
-            "reason":      "",
-            "summary":     "",
-        }
+        print("  ANTHROPIC_API_KEY missing — تخطي تحليل الاخبار")
+        return NEUTRAL_RESULT.copy()
 
     news_text = "\n".join([f"- {n}" for n in news_items])
 
-    prompt = f"""
-انت محلل مالي متخصص في سوق الاسهم السعودي.
+    prompt = f"""انت محلل مالي متخصص في سوق الاسهم السعودي.
 
 السهم: {stock_name} ({symbol})
 
@@ -141,8 +138,7 @@ def analyze_with_claude(symbol, stock_name, news_items):
 - positive و score_delta موجب (+5 الى +15): اخبار ارباح، توزيعات، عقود، توسع
 - negative و score_delta سالب (-5 الى -15): خسائر، غرامات، مشاكل تنظيمية
 - neutral و score_delta صفر: اخبار عامة لا تؤثر على السعر
-- اجب بـ JSON فقط بدون اي نص اضافي
-"""
+- اجب بـ JSON فقط بدون اي نص اضافي"""
 
     try:
         response = requests.post(
@@ -163,17 +159,28 @@ def analyze_with_claude(symbol, stock_name, news_items):
         if response.status_code == 200:
             data    = response.json()
             content = data["content"][0]["text"].strip()
+            # ✅ إصلاح: تنظيف backticks قبل parse
+            content = re.sub(r'```json|```', '', content).strip()
             match   = re.search(r'\{.*\}', content, re.DOTALL)
             if match:
                 result = json.loads(match.group())
                 result["score_delta"] = max(-15, min(15, int(result.get("score_delta", 0))))
+                # ✅ إصلاح: تحقق من وجود الحقول الأساسية
+                result.setdefault("sentiment",   "neutral")
+                result.setdefault("reason",      "")
+                result.setdefault("summary",     "")
                 return result
+            else:
+                print("  Claude: لم يرجع JSON صحيح — محايد")
         else:
             print(f"  Claude news API status: {response.status_code}")
 
+    except json.JSONDecodeError as e:
+        print(f"  JSON parse error: {e}")
     except Exception as e:
         print(f"  Claude API error: {e}")
 
+    # ✅ إصلاح: دائماً يرجع neutral عند الفشل بدل None
     return {
         "sentiment":   "neutral",
         "score_delta": 0,
@@ -185,29 +192,41 @@ def analyze_with_claude(symbol, stock_name, news_items):
 def get_news_analysis(symbol, stock_name):
     print(f"  جلب اخبار {stock_name} ({symbol})...")
 
+    # ✅ إصلاح: كل مصدر مستقل — إذا فشل أحدهم لا يوقف الباقين
     news = []
-    news += fetch_tadawul_disclosures(symbol)
-    if len(news) < 3:
-        news += fetch_argaam_news(symbol)
-    if len(news) < 3:
-        news += fetch_mubasher_news(symbol)
+    try:
+        news += fetch_tadawul_disclosures(symbol)
+    except Exception as e:
+        print(f"  تداول error: {e}")
 
+    if len(news) < 3:
+        try:
+            news += fetch_argaam_news(symbol)
+        except Exception as e:
+            print(f"  أرقام error: {e}")
+
+    if len(news) < 3:
+        try:
+            news += fetch_mubasher_news(symbol)
+        except Exception as e:
+            print(f"  مباشر error: {e}")
+
+    # إزالة المكررات
     seen, unique = set(), []
     for n in news:
-        if n not in seen:
-            seen.add(n)
+        key = n[:50]
+        if key not in seen:
+            seen.add(key)
             unique.append(n)
 
-    print(f"  وجدنا {len(unique)} خبر")
+    print(f"  إجمالي أخبار فريدة: {len(unique)}")
 
+    # ✅ إصلاح: إذا لا أخبار نرجع neutral فوراً بدون Claude call
     if not unique:
-        return {
-            "sentiment":   "neutral",
-            "score_delta": 0,
-            "reason":      "لا توجد اخبار حديثة",
-            "summary":     "",
-            "news_count":  0,
-        }
+        result = NEUTRAL_RESULT.copy()
+        result["news_count"] = 0
+        _save_cache(symbol, result)
+        return result
 
     analysis = analyze_with_claude(symbol, stock_name, unique[:5])
     analysis["news_count"] = len(unique)
@@ -217,14 +236,20 @@ def get_news_analysis(symbol, stock_name):
         "positive": "ايجابي",
         "negative": "سلبي",
         "neutral":  "محايد",
-    }.get(analysis["sentiment"], "محايد")
+    }.get(analysis.get("sentiment", "neutral"), "محايد")
 
-    delta = analysis["score_delta"]
+    delta = analysis.get("score_delta", 0)
     sign  = "+" if delta >= 0 else ""
     print(f"  الاخبار: {sentiment_ar} | Score: {sign}{delta}")
     if analysis.get("reason"):
         print(f"  السبب: {analysis['reason']}")
 
+    _save_cache(symbol, analysis)
+    return analysis
+
+
+def _save_cache(symbol, analysis):
+    """✅ إصلاح: حفظ منفصل مع معالجة الخطأ"""
     try:
         cache = {
             "symbol":       symbol,
@@ -233,10 +258,8 @@ def get_news_analysis(symbol, stock_name):
         }
         with open(NEWS_FILE, "w", encoding="utf-8") as f:
             json.dump(cache, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-    return analysis
+    except Exception as e:
+        print(f"  cache save error: {e}")
 
 
 if __name__ == "__main__":

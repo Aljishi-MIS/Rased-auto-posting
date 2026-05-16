@@ -241,6 +241,16 @@ def calc_targets(price, high, low, resistance, support, change_pct):
     reward = t1 - entry
     rr     = round(reward / risk, 2) if risk > 0 else 0
 
+    # ✅ تحسين: إذا R:R أقل من 1 نحاول تحسين وقف الخسارة
+    if rr < 1.0 and risk > 0:
+        # اضغط وقف الخسارة لتحسين R:R دون تجاوز 4%
+        max_sl_drop = entry * 0.04
+        better_sl   = round(entry - reward, 2)
+        if entry - better_sl <= max_sl_drop:
+            stop_loss = better_sl
+            risk      = entry - stop_loss
+            rr        = round(reward / risk, 2) if risk > 0 else 0
+
     return entry, t1, t2, stop_loss, rr
 
 

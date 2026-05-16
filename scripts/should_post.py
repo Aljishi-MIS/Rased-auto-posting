@@ -8,6 +8,7 @@ RSI_MIN            = 45
 RSI_MAX            = 70
 MIN_VOLUME_RATIO   = 1.3
 MIN_VOLUME_HIGH_RR = 1.1
+MIN_RR             = 1.5   # ✅ إصلاح: إضافة حد أدنى لنسبة الربح/الخسارة
 
 
 def check(data):
@@ -17,6 +18,7 @@ def check(data):
     rr           = data.get("rr", 0)
     symbol       = data.get("symbol", "")
     name         = data.get("stock_name", "")
+    signal_type  = data.get("type", "")
 
     vol_threshold = MIN_VOLUME_HIGH_RR if rr >= 3 else MIN_VOLUME_RATIO
 
@@ -27,6 +29,9 @@ def check(data):
         reasons_fail.append(f"RSI {rsi:.0f} خارج النطاق ({RSI_MIN}-{RSI_MAX})")
     if volume_ratio < vol_threshold:
         reasons_fail.append(f"Volume {volume_ratio:.1f}x < {vol_threshold}x")
+    # ✅ إصلاح: فلتر R:R — إلا إذا كانت إشارة ذهبية فالمعيار مرن
+    if signal_type != "اشارة ذهبية" and rr < MIN_RR:
+        reasons_fail.append(f"R:R {rr:.2f} < {MIN_RR} (الربح أقل من الخسارة)")
 
     print(f"\n{'='*55}")
     print(f"فحص جودة الاشارة: {name} ({symbol})")
@@ -34,10 +39,12 @@ def check(data):
     print(f"  Score        : {score:>6}  {'OK' if score >= MIN_SCORE else 'X':>3} (min {MIN_SCORE})")
     print(f"  RSI          : {rsi:>6.0f}  {'OK' if RSI_MIN <= rsi <= RSI_MAX else 'X':>3} ({RSI_MIN}-{RSI_MAX})")
     print(f"  Volume Ratio : {volume_ratio:>5.1f}x  {'OK' if volume_ratio >= vol_threshold else 'X':>3} (min {vol_threshold}x)")
-    print(f"  R:R          : {rr:>6.1f}  (معلوماتي فقط)")
+    print(f"  R:R          : {rr:>6.2f}  {'OK' if (signal_type == 'اشارة ذهبية' or rr >= MIN_RR) else 'X':>3} (min {MIN_RR})")
 
     if rr >= 3:
-        print(f"  ** R:R ممتاز -- تم تخفيف معيار الحجم الى {MIN_VOLUME_HIGH_RR}x")
+        print(f"  ** R:R ممتاز — تم تخفيف معيار الحجم إلى {MIN_VOLUME_HIGH_RR}x")
+    if signal_type == "اشارة ذهبية":
+        print(f"  ** إشارة ذهبية — معيار R:R مرن")
 
     if reasons_fail:
         print(f"\nالاشارة لا تستوفي المعايير:")
@@ -46,7 +53,7 @@ def check(data):
         print(f"\nتم تخطي النشر اليوم\n")
         return False
 
-    print(f"\nالاشارة تستوفي جميع المعايير - سيتم النشر!\n")
+    print(f"\nالاشارة تستوفي جميع المعايير — سيتم النشر!\n")
     return True
 
 
