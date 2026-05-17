@@ -126,7 +126,7 @@ def load_all_stocks_from_intel():
                 "high":           price * 1.01,
                 "low":            price * 0.99,
                 "volume":         vol,
-                "avg_volume":     vol * 0.7,
+                "avg_volume":     safe_float(s.get("avg_volume", 0)),
                 "change_percent": safe_float(s.get("change_pct", 0)),
                 "resistance":     price * 1.01,
                 "support":        price * 0.99,
@@ -162,14 +162,14 @@ def enrich_top10_with_live_data(ranked):
                 price = safe_float(s.get("price") or s.get("close"))
                 if price > 0:
                     stock["price"]          = price
-                    stock["high"]           = safe_float(s.get("high"),   price * 1.01)
-                    stock["low"]            = safe_float(s.get("low"),    price * 0.99)
-                    stock["volume"]         = safe_float(s.get("volume"),  stock["volume"])
-                    stock["avg_volume"]     = safe_float(s.get("avg_volume"), stock["volume"] * 0.7)
+                    stock["high"]           = safe_float(s.get("high"),       price * 1.01)
+                    stock["low"]            = safe_float(s.get("low"),         price * 0.99)
+                    stock["volume"]         = safe_float(s.get("volume"),      stock["volume"])
+                    stock["avg_volume"]     = safe_float(s.get("avg_volume"),  0)
                     stock["change_percent"] = safe_float(s.get("change_percent") or s.get("change_pct"))
-                    stock["resistance"]     = safe_float(s.get("resistance"), stock["high"])
-                    stock["support"]        = safe_float(s.get("support"),    stock["low"])
-                    stock["rsi"]            = safe_float(s.get("rsi"), stock["rsi"])
+                    stock["resistance"]     = safe_float(s.get("resistance"),  stock["high"])
+                    stock["support"]        = safe_float(s.get("support"),     stock["low"])
+                    stock["rsi"]            = safe_float(s.get("rsi"),         stock["rsi"])
                     updated += 1
 
     print(f"  تم تحديث {updated} سهم ✅")
@@ -204,7 +204,7 @@ def fallback_from_api():
                 "high":           safe_float(s.get("high"),   price * 1.01),
                 "low":            safe_float(s.get("low"),    price * 0.99),
                 "volume":         vol,
-                "avg_volume":     safe_float(s.get("avg_volume"), vol * 0.7),
+                "avg_volume":     safe_float(s.get("avg_volume"), 0),
                 "change_percent": safe_float(s.get("change_percent") or s.get("change_pct")),
                 "resistance":     safe_float(s.get("resistance"), safe_float(s.get("high"), price * 1.01)),
                 "support":        safe_float(s.get("support"),    safe_float(s.get("low"),  price * 0.99)),
@@ -241,9 +241,8 @@ def calc_targets(price, high, low, resistance, support, change_pct):
     reward = t1 - entry
     rr     = round(reward / risk, 2) if risk > 0 else 0
 
-    # ✅ تحسين: إذا R:R أقل من 1 نحاول تحسين وقف الخسارة
+    # إذا R:R أقل من 1 نحاول تحسين وقف الخسارة تلقائياً
     if rr < 1.0 and risk > 0:
-        # اضغط وقف الخسارة لتحسين R:R دون تجاوز 4%
         max_sl_drop = entry * 0.04
         better_sl   = round(entry - reward, 2)
         if entry - better_sl <= max_sl_drop:
@@ -308,7 +307,7 @@ def calculate_score(stock, top_sectors=None, news_delta=0):
     resistance     = safe_float(stock.get("resistance"), high)
     support        = safe_float(stock.get("support"),    low)
     volume         = safe_float(stock.get("volume"))
-    avg_volume     = max(safe_float(stock.get("avg_volume")), 1)
+    avg_volume     = safe_float(stock.get("avg_volume"))
     change_percent = safe_float(stock.get("change_percent"))
     rsi            = safe_float(stock.get("rsi"), 50)
     rs_rank        = safe_float(stock.get("rs_rank", 0))
@@ -329,10 +328,24 @@ def calculate_score(stock, top_sectors=None, news_delta=0):
         elif dist <= 0.03:
             score += 12; reasons.append(f"قريب من مقاومة ({resistance:.2f})")
 
-    volume_ratio = volume / avg_volume
-    if   volume_ratio >= 3:   score += 25; reasons.append(f"سيولة استثنائية {volume_ratio:.1f}x")
-    elif volume_ratio >= 2:   score += 20; reasons.append(f"سيولة عالية {volume_ratio:.1f}x")
-    elif volume_ratio >= 1.5: score += 10; reasons.append(f"سيولة جيدة {volume_ratio:.1f}x")
+    # ✅ إصلاح Volume: إذا avg_volume صفر نقدّره من volume اليوم
+    if avg_volume <= 0 and volume > 0:
+        avg_volume    = volume * 0.5   # نفترض اليوم أعلى 2x من المعتاد
+        volume_source = "estimated"
+    else:
+        avg_volume    = max(avg_volume, 1)
+        volume_source = "api"
+
+    volume_ratio = volume / avg_volume if avg_volume > 0 else 0
+
+    if volume_source == "estimated":
+        # حجم مقدَّر — نقاط أقل + توضيح
+        if   volume_ratio >= 2: score += 10; reasons.append(f"حجم {volume_ratio:.1f}x (مقدَّر)")
+        elif volume_ratio >= 1: score +=  5; reasons.append(f"حجم {volume_ratio:.1f}x (مقدَّر)")
+    else:
+        if   volume_ratio >= 3:   score += 25; reasons.append(f"سيولة استثنائية {volume_ratio:.1f}x")
+        elif volume_ratio >= 2:   score += 20; reasons.append(f"سيولة عالية {volume_ratio:.1f}x")
+        elif volume_ratio >= 1.5: score += 10; reasons.append(f"سيولة جيدة {volume_ratio:.1f}x")
 
     if   50 <= rsi <= 65:  score += 20; reasons.append(f"RSI {rsi:.0f} في المنطقة الذهبية")
     elif 40 <= rsi < 50:   score += 12; reasons.append(f"RSI {rsi:.0f} بداية زخم")
@@ -517,9 +530,9 @@ def claude_review(candidates, top_sectors):
         )
 
         if response.status_code == 200:
-            data     = response.json()
-            content  = data["content"][0]["text"].strip()
-            match    = re.search(r'\{.*\}', content, re.DOTALL)
+            data    = response.json()
+            content = data["content"][0]["text"].strip()
+            match   = re.search(r'\{.*\}', content, re.DOTALL)
             if match:
                 result   = json.loads(match.group())
                 decision = result.get("decision", "publish")
@@ -554,7 +567,6 @@ def main():
         print("السوق مغلق الان - لا يتم النشر")
         sys.exit(1)
 
-    # الخطوة 1 — market_intelligence يحلل 220+ سهم
     top_sectors = []
     try:
         import os as _os
@@ -567,7 +579,6 @@ def main():
     except Exception as e:
         print(f"\n Market Intelligence error: {e}")
 
-    # الخطوة 2 — قراءة جميع الأسهم من market_intel.json
     stocks, intel_sectors = load_all_stocks_from_intel()
     if intel_sectors:
         top_sectors = intel_sectors
@@ -578,7 +589,6 @@ def main():
     if not stocks:
         raise RuntimeError("no stocks found")
 
-    # الخطوة 3 — تقييم جميع الأسهم
     ranked = []
     for stock in stocks:
         if safe_float(stock.get("price")) <= 0:
@@ -608,8 +618,6 @@ def main():
         raise RuntimeError("no stocks after scoring")
 
     ranked.sort(key=lambda x: x["score"], reverse=True)
-
-    # الخطوة 4 — تحديث أفضل 10 ببيانات حية
     ranked = enrich_top10_with_live_data(ranked)
 
     print(f"\n{'='*60}")
@@ -620,7 +628,6 @@ def main():
               f"Score:{r['score']:>4} RS:{s.get('rs_rank',0):>3} "
               f"Vol:{r['volume_ratio']:.1f}x Sec:{s.get('sector','')}")
 
-    # الخطوة 5 — أخبار
     print(f"\n{'='*60}")
     print("تحليل الاخبار...")
 
@@ -651,21 +658,19 @@ def main():
 
     final_candidates.sort(key=lambda x: x["score"], reverse=True)
 
-    # الخطوة 6 — Claude يقرر
     print(f"\n{'='*60}")
     print("Claude يراجع ويقرر...")
 
     best, claude_result = claude_review(final_candidates, top_sectors)
 
-    # Claude رفض النشر
     if best is None:
         reason = claude_result.get("reason", "لا توجد فرصة جيدة") if claude_result else "لا توجد فرصة"
         print(f"\n  لا يتم النشر: {reason}")
         sys.exit(1)
 
-    claude_reason  = claude_result.get("reason",    "") if claude_result else ""
-    claude_note    = claude_result.get("note",       "") if claude_result else ""
-    claude_warning = claude_result.get("warning",    "") if claude_result else ""
+    claude_reason  = claude_result.get("reason",     "") if claude_result else ""
+    claude_note    = claude_result.get("note",        "") if claude_result else ""
+    claude_warning = claude_result.get("warning",     "") if claude_result else ""
     claude_conf    = claude_result.get("confidence", "متوسطة") if claude_result else "متوسطة"
 
     daily_data = build_daily_json(
