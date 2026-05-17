@@ -561,7 +561,7 @@ def main():
 
     if not is_market_open():
         print("السوق مغلق الان - لا يتم النشر")
-        sys.exit(1)
+        sys.exit(0)
 
     top_sectors = []
     try:
