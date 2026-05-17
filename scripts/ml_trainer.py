@@ -51,10 +51,6 @@ def get(endpoint, params=None):
     return None
 
 
-# ══════════════════════════════════════════════
-# حساب المؤشرات الفنية
-# ══════════════════════════════════════════════
-
 def calc_rsi(closes, period=14):
     if len(closes) < period + 1:
         return 50.0
@@ -113,7 +109,6 @@ def find_support_resistance(highs, lows, closes):
     if len(highs) < 5:
         price = closes[-1]
         return price * 1.03, price * 0.97
-
     resistances, supports = [], []
     for i in range(1, len(highs)-1):
         if highs[i] >= highs[i-1] and highs[i] >= highs[i+1]:
@@ -121,7 +116,6 @@ def find_support_resistance(highs, lows, closes):
     for i in range(1, len(lows)-1):
         if lows[i] <= lows[i-1] and lows[i] <= lows[i+1]:
             supports.append(lows[i])
-
     price      = closes[-1]
     above      = [r for r in resistances if r > price * 1.002]
     resistance = min(above) if above else max(highs)
@@ -131,9 +125,6 @@ def find_support_resistance(highs, lows, closes):
 
 
 def extract_features(hist):
-    """
-    يستخرج 20 feature من البيانات التاريخية
-    """
     closes  = hist["closes"]
     highs   = hist["highs"]
     lows    = hist["lows"]
@@ -146,45 +137,33 @@ def extract_features(hist):
     if price <= 0:
         return None
 
-    # RSI
-    rsi = calc_rsi(closes)
-
-    # EMA
+    rsi   = calc_rsi(closes)
     ema20 = calc_ema(closes, min(20, len(closes)))
     ema50 = calc_ema(closes, min(50, len(closes)))
+    atr   = calc_atr(highs, lows, closes)
 
-    # ATR
-    atr     = calc_atr(highs, lows, closes)
-    atr_pct = (atr / price * 100) if price > 0 else 0
-
-    # Bollinger
+    atr_pct  = (atr / price * 100) if price > 0 else 0
     bb_width = calc_bollinger_width(closes)
 
-    # Support & Resistance
     resistance, support = find_support_resistance(highs, lows, closes)
     dist_to_resistance  = (resistance - price) / price * 100
     dist_to_support     = (price - support) / price * 100
 
-    # Volume trend
     avg_vol_5  = sum(volumes[-5:])  / 5  if len(volumes) >= 5  else volumes[-1]
     avg_vol_10 = sum(volumes[-10:]) / 10 if len(volumes) >= 10 else volumes[-1]
     vol_ratio  = avg_vol_5 / avg_vol_10 if avg_vol_10 > 0 else 1
 
-    # Price momentum
-    chg_1d  = (closes[-1] - closes[-2]) / closes[-2] * 100 if len(closes) >= 2  else 0
-    chg_3d  = (closes[-1] - closes[-4]) / closes[-4] * 100 if len(closes) >= 4  else 0
-    chg_5d  = (closes[-1] - closes[-6]) / closes[-6] * 100 if len(closes) >= 6  else 0
+    chg_1d  = (closes[-1] - closes[-2])  / closes[-2]  * 100 if len(closes) >= 2  else 0
+    chg_3d  = (closes[-1] - closes[-4])  / closes[-4]  * 100 if len(closes) >= 4  else 0
+    chg_5d  = (closes[-1] - closes[-6])  / closes[-6]  * 100 if len(closes) >= 6  else 0
     chg_10d = (closes[-1] - closes[-11]) / closes[-11] * 100 if len(closes) >= 11 else 0
 
-    # Close position في اليوم
-    day_range  = highs[-1] - lows[-1]
-    close_pos  = (closes[-1] - lows[-1]) / day_range if day_range > 0 else 0.5
+    day_range = highs[-1] - lows[-1]
+    close_pos = (closes[-1] - lows[-1]) / day_range if day_range > 0 else 0.5
 
-    # EMA position
     price_vs_ema20 = (price - ema20) / ema20 * 100 if ema20 > 0 else 0
     price_vs_ema50 = (price - ema50) / ema50 * 100 if ema50 > 0 else 0
 
-    # Trend consistency — كم يوم من آخر 5 ارتفع
     up_days_5 = sum(1 for i in range(-5, 0)
                     if len(closes) > abs(i) and closes[i] > closes[i-1])
 
@@ -208,15 +187,10 @@ def extract_features(hist):
 
 
 def make_label(closes, future_days=5, target_pct=3.0):
-    """
-    Label: هل ارتفع السهم أكثر من target_pct% خلال future_days؟
-    1 = نعم (إشارة ناجحة)
-    0 = لا  (إشارة فاشلة)
-    """
     if len(closes) < future_days + 1:
         return None
-    entry       = closes[-(future_days+1)]
-    future_max  = max(closes[-future_days:])
+    entry      = closes[-(future_days+1)]
+    future_max = max(closes[-future_days:])
     return 1 if (future_max - entry) / entry * 100 >= target_pct else 0
 
 
@@ -238,16 +212,7 @@ def fetch_historical(symbol, period=60):
     }
 
 
-# ══════════════════════════════════════════════
-# نموذج بسيط بدون sklearn
-# Random Forest يدوي خفيف
-# ══════════════════════════════════════════════
-
 class SimpleDecisionTree:
-    """
-    شجرة قرار بسيطة — بدون مكتبات خارجية
-    """
-
     def __init__(self, max_depth=5, min_samples=3):
         self.max_depth   = max_depth
         self.min_samples = min_samples
@@ -262,22 +227,22 @@ class SimpleDecisionTree:
         return 1 - p1**2 - p0**2
 
     def _best_split(self, X, y, features):
-        best_gain  = 0
-        best_feat  = None
+        best_gain   = 0
+        best_feat   = None
         best_thresh = None
         parent_gini = self._gini(y)
 
         for feat in features:
             values = sorted(set(row[feat] for row in X))
             for i in range(len(values)-1):
-                thresh = (values[i] + values[i+1]) / 2
+                thresh  = (values[i] + values[i+1]) / 2
                 left_y  = [y[j] for j, row in enumerate(X) if row[feat] <= thresh]
                 right_y = [y[j] for j, row in enumerate(X) if row[feat] > thresh]
 
                 if not left_y or not right_y:
                     continue
 
-                n = len(y)
+                n    = len(y)
                 gain = parent_gini - (
                     len(left_y)/n  * self._gini(left_y) +
                     len(right_y)/n * self._gini(right_y)
@@ -293,7 +258,6 @@ class SimpleDecisionTree:
     def _build(self, X, y, depth):
         if not y or depth >= self.max_depth or len(y) < self.min_samples:
             return {"leaf": True, "prob": sum(y)/len(y) if y else 0.5}
-
         if len(set(y)) == 1:
             return {"leaf": True, "prob": float(y[0])}
 
@@ -330,19 +294,14 @@ class SimpleDecisionTree:
 
 
 class SimpleRandomForest:
-    """
-    Random Forest بسيط — 20 شجرة
-    """
-
     def __init__(self, n_trees=20, max_depth=5):
-        self.n_trees  = n_trees
+        self.n_trees   = n_trees
         self.max_depth = max_depth
-        self.trees    = []
-        self.features_per_tree = None
+        self.trees     = []
 
     def _bootstrap(self, X, y):
         import random
-        n = len(X)
+        n   = len(X)
         idx = [random.randint(0, n-1) for _ in range(n)]
         return [X[i] for i in idx], [y[i] for i in idx]
 
@@ -352,13 +311,11 @@ class SimpleRandomForest:
         n_features   = max(3, int(len(all_features)**0.5))
 
         self.trees = []
-        for t in range(self.n_trees):
-            Xb, yb = self._bootstrap(X, y)
-            # اختيار عشوائي للـ features
+        for _ in range(self.n_trees):
+            Xb, yb   = self._bootstrap(X, y)
             selected = random.sample(all_features, n_features)
             Xb_sub   = [{f: row[f] for f in selected} for row in Xb]
-
-            tree = SimpleDecisionTree(max_depth=self.max_depth)
+            tree     = SimpleDecisionTree(max_depth=self.max_depth)
             tree.fit(Xb_sub, yb)
             self.trees.append((tree, selected))
 
@@ -370,17 +327,13 @@ class SimpleRandomForest:
             x_sub = {f: x[f] for f in features if f in x}
             prob  = tree.predict_proba([x_sub])[0]
             probs.append(prob)
-        return sum(probs) / len(probs)
+        return sum(probs) / len(probs) if probs else 0.5
 
     def to_dict(self):
-        # حفظ النموذج كـ JSON
         return {
             "n_trees":   self.n_trees,
             "max_depth": self.max_depth,
-            "trees": [
-                {"tree": t.tree, "features": f}
-                for t, f in self.trees
-            ]
+            "trees":     [{"tree": t.tree, "features": f} for t, f in self.trees]
         }
 
     @classmethod
@@ -388,20 +341,13 @@ class SimpleRandomForest:
         rf = cls(data["n_trees"], data["max_depth"])
         rf.trees = []
         for item in data["trees"]:
-            t       = SimpleDecisionTree(data["max_depth"])
-            t.tree  = item["tree"]
+            t      = SimpleDecisionTree(data["max_depth"])
+            t.tree = item["tree"]
             rf.trees.append((t, item["features"]))
         return rf
 
 
-# ══════════════════════════════════════════════
-# التدريب الرئيسي
-# ══════════════════════════════════════════════
-
 def collect_training_data():
-    """
-    يجلب بيانات تاريخية لجميع الأسهم ويبني dataset للتدريب
-    """
     print("\n" + "="*60)
     print("جمع بيانات التدريب...")
     print("="*60)
@@ -421,8 +367,6 @@ def collect_training_data():
         lows    = hist["lows"]
         volumes = hist["volumes"]
 
-        # نبني samples من نقاط مختلفة في التاريخ
-        # كل sample = features من يوم معين + label بعد 5 أيام
         for window_end in range(15, len(closes) - 5):
             window = {
                 "closes":  closes[:window_end],
@@ -430,15 +374,12 @@ def collect_training_data():
                 "lows":    lows[:window_end],
                 "volumes": volumes[:window_end],
             }
-
             features = extract_features(window)
             if features is None:
                 continue
-
             label = make_label(closes[:window_end + 6], future_days=5, target_pct=3.0)
             if label is None:
                 continue
-
             features["symbol"] = sym
             features["label"]  = label
             dataset.append(features)
@@ -448,7 +389,8 @@ def collect_training_data():
             print(f"  [{i+1}/{len(TASI_SYMBOLS)}] {success} سهم ✅ | {len(dataset)} sample")
 
     print(f"\n  اجمالي: {success} سهم | {len(dataset)} sample للتدريب")
-    print(f"  نسبة الإيجابي: {sum(d['label'] for d in dataset)/len(dataset)*100:.1f}%")
+    if dataset:
+        print(f"  نسبة الإيجابي: {sum(d['label'] for d in dataset)/len(dataset)*100:.1f}%")
 
     with open(DATASET_FILE, "w", encoding="utf-8") as f:
         json.dump(dataset, f, ensure_ascii=False)
@@ -457,9 +399,6 @@ def collect_training_data():
 
 
 def train_model(dataset):
-    """
-    يدرب نموذج Random Forest على البيانات
-    """
     print("\n" + "="*60)
     print("تدريب النموذج...")
     print("="*60)
@@ -474,43 +413,37 @@ def train_model(dataset):
     X = [{f: d[f] for f in FEATURES} for d in dataset]
     y = [d["label"] for d in dataset]
 
-    # تقسيم Train/Test (80/20)
-    split    = int(len(X) * 0.8)
-    X_train, X_test = X[:split], X[split:]
-    y_train, y_test = y[:split], y[split:]
+    split   = int(len(X) * 0.8)
+    X_train = X[:split]; X_test = X[split:]
+    y_train = y[:split]; y_test = y[split:]
 
     print(f"  Train: {len(X_train)} | Test: {len(X_test)}")
 
-    # تدريب النموذج
     model = SimpleRandomForest(n_trees=20, max_depth=5)
     model.fit(X_train, y_train)
 
-    # تقييم الدقة
     correct = 0
     tp = fp = tn = fn = 0
 
     for x, true_label in zip(X_test, y_test):
         prob       = model.predict_proba(x)
         pred_label = 1 if prob >= 0.5 else 0
-
-        if pred_label == true_label:
-            correct += 1
+        if pred_label == true_label: correct += 1
         if pred_label == 1 and true_label == 1: tp += 1
         if pred_label == 1 and true_label == 0: fp += 1
         if pred_label == 0 and true_label == 0: tn += 1
         if pred_label == 0 and true_label == 1: fn += 1
 
-    accuracy  = correct / len(X_test) * 100
+    accuracy  = correct / len(X_test) * 100 if X_test else 0
     precision = tp / (tp+fp) * 100 if (tp+fp) > 0 else 0
     recall    = tp / (tp+fn) * 100 if (tp+fn) > 0 else 0
 
     print(f"\n  النتائج:")
     print(f"  Accuracy : {accuracy:.1f}%")
-    print(f"  Precision: {precision:.1f}%  (من إشاراتنا كم كانت صحيحة)")
-    print(f"  Recall   : {recall:.1f}%  (من الفرص الحقيقية كم أمسكنا)")
+    print(f"  Precision: {precision:.1f}%")
+    print(f"  Recall   : {recall:.1f}%")
     print(f"  TP:{tp} FP:{fp} TN:{tn} FN:{fn}")
 
-    # حفظ النموذج
     model_data = {
         "model":      model.to_dict(),
         "features":   FEATURES,
@@ -519,6 +452,7 @@ def train_model(dataset):
         "recall":     round(recall, 2),
         "trained_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "samples":    len(dataset),
+        "is_default": False,
     }
 
     with open(MODEL_FILE, "w", encoding="utf-8") as f:
@@ -528,14 +462,49 @@ def train_model(dataset):
     return model, model_data
 
 
+def create_default_model():
+    """
+    ✅ إنشاء نموذج افتراضي محايد إذا لم يكن ml_model.json موجوداً
+    يعطي 50.0 لجميع الأسهم — يُستبدل بنموذج حقيقي بعد weekly-report
+    """
+    default = {
+        "model":      {"n_trees": 0, "max_depth": 5, "trees": []},
+        "features":   [
+            "rsi", "atr_pct", "bb_width",
+            "dist_to_resistance", "dist_to_support",
+            "vol_ratio", "chg_1d", "chg_3d", "chg_5d", "chg_10d",
+            "close_pos", "price_vs_ema20", "price_vs_ema50", "up_days_5",
+        ],
+        "accuracy":   50.0,
+        "precision":  50.0,
+        "recall":     50.0,
+        "trained_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "samples":    0,
+        "is_default": True,
+    }
+    os.makedirs("data", exist_ok=True)
+    with open(MODEL_FILE, "w", encoding="utf-8") as f:
+        json.dump(default, f, ensure_ascii=False, indent=2)
+    return default
+
+
 def predict(symbol, hist):
     """
     يستخدم النموذج المحفوظ للتنبؤ بسهم جديد
     يُستدعى من fetch_api_data.py
     """
     try:
+        # ✅ إذا النموذج غير موجود أنشئ نموذجاً افتراضياً محايداً
+        if not os.path.exists(MODEL_FILE):
+            create_default_model()
+            return 50.0
+
         with open(MODEL_FILE, "r", encoding="utf-8") as f:
             model_data = json.load(f)
+
+        # نموذج افتراضي — أرجع 50 مباشرة بدون حساب
+        if model_data.get("is_default") or not model_data["model"].get("trees"):
+            return 50.0
 
         features = extract_features(hist)
         if features is None:
@@ -547,8 +516,7 @@ def predict(symbol, hist):
 
         return ml_score
 
-    except Exception as e:
-        print(f"  ML predict error: {e}")
+    except Exception:
         return 50.0
 
 
@@ -557,14 +525,12 @@ def main():
         print("API_KEY missing")
         return
 
-    # الخطوة 1 — جمع البيانات
     dataset = collect_training_data()
 
     if len(dataset) < 100:
         print("بيانات غير كافية للتدريب")
         return
 
-    # الخطوة 2 — تدريب النموذج
     model, stats = train_model(dataset)
 
     print(f"\n{'='*60}")
