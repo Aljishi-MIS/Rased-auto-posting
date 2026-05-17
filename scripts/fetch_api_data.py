@@ -161,16 +161,15 @@ def enrich_top10_with_live_data(ranked):
             if s:
                 price = safe_float(s.get("price") or s.get("close"))
                 if price > 0:
-                    live_vol             = safe_float(s.get("volume"), stock["volume"])
                     stock["price"]          = price
-                    stock["high"]           = safe_float(s.get("high"),       price * 1.01)
-                    stock["low"]            = safe_float(s.get("low"),         price * 0.99)
-                    stock["volume"]         = live_vol
-                    stock["avg_volume"]     = safe_float(s.get("avg_volume")) or live_vol * 0.7
+                    stock["high"]           = safe_float(s.get("high"),   price * 1.01)
+                    stock["low"]            = safe_float(s.get("low"),    price * 0.99)
+                    stock["volume"]         = safe_float(s.get("volume"),  stock["volume"])
+                    stock["avg_volume"]     = safe_float(s.get("avg_volume"), stock["volume"] * 0.7)
                     stock["change_percent"] = safe_float(s.get("change_percent") or s.get("change_pct"))
-                    stock["resistance"]     = safe_float(s.get("resistance"),  stock["high"])
-                    stock["support"]        = safe_float(s.get("support"),     stock["low"])
-                    stock["rsi"]            = safe_float(s.get("rsi"),         stock["rsi"])
+                    stock["resistance"]     = safe_float(s.get("resistance"), stock["high"])
+                    stock["support"]        = safe_float(s.get("support"),    stock["low"])
+                    stock["rsi"]            = safe_float(s.get("rsi"), stock["rsi"])
                     updated += 1
 
     print(f"  تم تحديث {updated} سهم ✅")
@@ -307,7 +306,7 @@ def calculate_score(stock, top_sectors=None, news_delta=0):
     resistance     = safe_float(stock.get("resistance"), high)
     support        = safe_float(stock.get("support"),    low)
     volume         = safe_float(stock.get("volume"))
-    avg_volume     = safe_float(stock.get("avg_volume"))
+    avg_volume     = max(safe_float(stock.get("avg_volume")), 1)
     change_percent = safe_float(stock.get("change_percent"))
     rsi            = safe_float(stock.get("rsi"), 50)
     rs_rank        = safe_float(stock.get("rs_rank", 0))
@@ -328,12 +327,10 @@ def calculate_score(stock, top_sectors=None, news_delta=0):
         elif dist <= 0.03:
             score += 12; reasons.append(f"قريب من مقاومة ({resistance:.2f})")
 
-    # إذا avg_volume صفر نقدّره من volume اليوم
-    if avg_volume <= 0 and volume > 0:
+    if avg_volume <= 1 and volume > 0:
         avg_volume    = volume * 0.5
         volume_source = "estimated"
     else:
-        avg_volume    = max(avg_volume, 1)
         volume_source = "api"
 
     volume_ratio = volume / avg_volume if avg_volume > 0 else 0
@@ -529,9 +526,9 @@ def claude_review(candidates, top_sectors):
         )
 
         if response.status_code == 200:
-            data    = response.json()
-            content = data["content"][0]["text"].strip()
-            match   = re.search(r'\{.*\}', content, re.DOTALL)
+            data     = response.json()
+            content  = data["content"][0]["text"].strip()
+            match    = re.search(r'\{.*\}', content, re.DOTALL)
             if match:
                 result   = json.loads(match.group())
                 decision = result.get("decision", "publish")
@@ -587,6 +584,14 @@ def main():
 
     if not stocks:
         raise RuntimeError("no stocks found")
+
+    # فلتر السيولة: استبعاد الأسهم التي لا تُتداول (volume = 0)
+    stocks_with_volume = [s for s in stocks if safe_float(s.get("volume")) > 0]
+    if len(stocks_with_volume) >= 5:
+        stocks = stocks_with_volume
+        print(f"  بعد فلتر السيولة: {len(stocks)} سهم نشط")
+    else:
+        print(f"  تحذير: معظم الأسهم بلا حجم — يُكمل بدون فلتر")
 
     ranked = []
     for stock in stocks:
