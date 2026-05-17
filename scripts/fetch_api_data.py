@@ -126,7 +126,7 @@ def load_all_stocks_from_intel():
                 "high":           price * 1.01,
                 "low":            price * 0.99,
                 "volume":         vol,
-                "avg_volume":     safe_float(s.get("avg_volume", 0)),
+                "avg_volume":     vol * 0.7,
                 "change_percent": safe_float(s.get("change_pct", 0)),
                 "resistance":     price * 1.01,
                 "support":        price * 0.99,
@@ -161,11 +161,12 @@ def enrich_top10_with_live_data(ranked):
             if s:
                 price = safe_float(s.get("price") or s.get("close"))
                 if price > 0:
+                    live_vol             = safe_float(s.get("volume"), stock["volume"])
                     stock["price"]          = price
                     stock["high"]           = safe_float(s.get("high"),       price * 1.01)
                     stock["low"]            = safe_float(s.get("low"),         price * 0.99)
-                    stock["volume"]         = safe_float(s.get("volume"),      stock["volume"])
-                    stock["avg_volume"]     = safe_float(s.get("avg_volume"),  0)
+                    stock["volume"]         = live_vol
+                    stock["avg_volume"]     = safe_float(s.get("avg_volume")) or live_vol * 0.7
                     stock["change_percent"] = safe_float(s.get("change_percent") or s.get("change_pct"))
                     stock["resistance"]     = safe_float(s.get("resistance"),  stock["high"])
                     stock["support"]        = safe_float(s.get("support"),     stock["low"])
@@ -204,7 +205,7 @@ def fallback_from_api():
                 "high":           safe_float(s.get("high"),   price * 1.01),
                 "low":            safe_float(s.get("low"),    price * 0.99),
                 "volume":         vol,
-                "avg_volume":     safe_float(s.get("avg_volume"), 0),
+                "avg_volume":     safe_float(s.get("avg_volume"), vol * 0.7),
                 "change_percent": safe_float(s.get("change_percent") or s.get("change_pct")),
                 "resistance":     safe_float(s.get("resistance"), safe_float(s.get("high"), price * 1.01)),
                 "support":        safe_float(s.get("support"),    safe_float(s.get("low"),  price * 0.99)),
@@ -241,7 +242,6 @@ def calc_targets(price, high, low, resistance, support, change_pct):
     reward = t1 - entry
     rr     = round(reward / risk, 2) if risk > 0 else 0
 
-    # إذا R:R أقل من 1 نحاول تحسين وقف الخسارة تلقائياً
     if rr < 1.0 and risk > 0:
         max_sl_drop = entry * 0.04
         better_sl   = round(entry - reward, 2)
@@ -296,7 +296,7 @@ def get_ml_score(symbol):
         if hist:
             return predict(symbol, hist)
     except Exception:
-        pass
+        pass  # ml_model.json غير موجود بعد — سيُدرَّب في التقرير الأسبوعي
     return 50.0
 
 
@@ -328,9 +328,9 @@ def calculate_score(stock, top_sectors=None, news_delta=0):
         elif dist <= 0.03:
             score += 12; reasons.append(f"قريب من مقاومة ({resistance:.2f})")
 
-    # ✅ إصلاح Volume: إذا avg_volume صفر نقدّره من volume اليوم
+    # إذا avg_volume صفر نقدّره من volume اليوم
     if avg_volume <= 0 and volume > 0:
-        avg_volume    = volume * 0.5   # نفترض اليوم أعلى 2x من المعتاد
+        avg_volume    = volume * 0.5
         volume_source = "estimated"
     else:
         avg_volume    = max(avg_volume, 1)
@@ -339,7 +339,6 @@ def calculate_score(stock, top_sectors=None, news_delta=0):
     volume_ratio = volume / avg_volume if avg_volume > 0 else 0
 
     if volume_source == "estimated":
-        # حجم مقدَّر — نقاط أقل + توضيح
         if   volume_ratio >= 2: score += 10; reasons.append(f"حجم {volume_ratio:.1f}x (مقدَّر)")
         elif volume_ratio >= 1: score +=  5; reasons.append(f"حجم {volume_ratio:.1f}x (مقدَّر)")
     else:
