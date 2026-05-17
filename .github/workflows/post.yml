@@ -5,11 +5,11 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "30 5 * * 0-4"    # 8:30 KSA — إشارة ذهبية قبل السوق
-    - cron: "0 6 * * 0-4"     # 9:00 KSA — إشارة ذهبية قبل السوق
-    - cron: "*/5 7-12 * * 0-4" # كل 5 دقائق خلال السوق 10ص–3م
-    - cron: "0 12 * * 0-4"    # 3:00م KSA — نهاية الجلسة
-    - cron: "30 12 * * 4"     # 3:30م خميس — تقرير أسبوعي
+    - cron: "30 5 * * 0-4"
+    - cron: "0 6 * * 0-4"
+    - cron: "*/5 7-12 * * 0-4"
+    - cron: "0 12 * * 0-4"
+    - cron: "30 12 * * 4"
 
 jobs:
 
@@ -48,12 +48,11 @@ jobs:
           API_URL:           ${{ secrets.API_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scripts/fetch_api_data.py
-        continue-on-error: true
 
       - name: Check Signal Quality
         id: quality_check
         run: python scripts/should_post.py
-        continue-on-error: true
+        continue-on-error: true  # يبقى true — outcome يُستخدم للشرط في الخطوات التالية
 
       - name: Generate Post Image
         if: steps.quality_check.outcome == 'success'
@@ -114,7 +113,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/signals_log.csv data/golden_signal.json data/news_cache.json || true
+          git add data/signals_log.csv data/golden_signal.json data/news_cache.json data/ml_model.json || true
           git diff --cached --quiet || git commit -m "📊 اشارة جديدة"
           git push || true
         continue-on-error: true
@@ -178,7 +177,6 @@ jobs:
         continue-on-error: true
 
 
-  # ✅ إصلاح: track-results يعمل مرة واحدة فقط — بعد إغلاق السوق (3م)
   track-results:
     runs-on: ubuntu-latest
     if: >
