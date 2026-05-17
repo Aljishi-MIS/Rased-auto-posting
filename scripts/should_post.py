@@ -1,5 +1,6 @@
 import json
 import sys
+from datetime import datetime
 
 DATA_FILE = "data/daily.json"
 
@@ -8,7 +9,7 @@ RSI_MIN            = 45
 RSI_MAX            = 70
 MIN_VOLUME_RATIO   = 1.3
 MIN_VOLUME_HIGH_RR = 1.1
-MIN_RR             = 1.5   # ✅ إصلاح: إضافة حد أدنى لنسبة الربح/الخسارة
+MIN_RR             = 1.5
 
 
 def check(data):
@@ -29,7 +30,6 @@ def check(data):
         reasons_fail.append(f"RSI {rsi:.0f} خارج النطاق ({RSI_MIN}-{RSI_MAX})")
     if volume_ratio < vol_threshold:
         reasons_fail.append(f"Volume {volume_ratio:.1f}x < {vol_threshold}x")
-    # ✅ إصلاح: فلتر R:R — إلا إذا كانت إشارة ذهبية فالمعيار مرن
     if signal_type != "اشارة ذهبية" and rr < MIN_RR:
         reasons_fail.append(f"R:R {rr:.2f} < {MIN_RR} (الربح أقل من الخسارة)")
 
@@ -63,6 +63,13 @@ if __name__ == "__main__":
             data = json.load(f)
     except Exception as e:
         print(f"خطا في قراءة {DATA_FILE}: {e}")
+        sys.exit(1)
+
+    # ✅ فحص حداثة البيانات — منع النشر من بيانات قديمة
+    generated_at = data.get("generated_at", "")
+    today = datetime.now().strftime("%Y-%m-%d")
+    if not generated_at.startswith(today):
+        print(f"البيانات قديمة ({generated_at or 'غير محدد'}) — تم الانتهاء")
         sys.exit(1)
 
     if check(data):
