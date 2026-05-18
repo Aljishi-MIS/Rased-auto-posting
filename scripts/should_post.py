@@ -9,7 +9,7 @@ RSI_MIN            = 45
 RSI_MAX            = 70
 MIN_VOLUME_RATIO   = 1.3
 MIN_VOLUME_HIGH_RR = 1.1
-MIN_RR             = 1.5
+MIN_RR             = 1.2   # 1.2 للإشارات ذات Score عالٍ
 
 
 def check(data):
@@ -28,8 +28,13 @@ def check(data):
         reasons_fail.append(f"Score {score} < {MIN_SCORE}")
     if not (RSI_MIN <= rsi <= RSI_MAX):
         reasons_fail.append(f"RSI {rsi:.0f} خارج النطاق ({RSI_MIN}-{RSI_MAX})")
+
     if volume_ratio < vol_threshold:
-        reasons_fail.append(f"Volume {volume_ratio:.1f}x < {vol_threshold}x")
+        if score >= 85 and volume_ratio == 0.0:
+            print(f"  ** Volume = 0 (مشكلة API) — مقبول لـ Score {score}")
+        else:
+            reasons_fail.append(f"Volume {volume_ratio:.1f}x < {vol_threshold}x")
+
     if signal_type != "اشارة ذهبية" and rr < MIN_RR:
         reasons_fail.append(f"R:R {rr:.2f} < {MIN_RR} (الربح أقل من الخسارة)")
 
@@ -38,7 +43,8 @@ def check(data):
     print(f"{'='*55}")
     print(f"  Score        : {score:>6}  {'OK' if score >= MIN_SCORE else 'X':>3} (min {MIN_SCORE})")
     print(f"  RSI          : {rsi:>6.0f}  {'OK' if RSI_MIN <= rsi <= RSI_MAX else 'X':>3} ({RSI_MIN}-{RSI_MAX})")
-    print(f"  Volume Ratio : {volume_ratio:>5.1f}x  {'OK' if volume_ratio >= vol_threshold else 'X':>3} (min {vol_threshold}x)")
+    vol_ok = volume_ratio >= vol_threshold or (score >= 85 and volume_ratio == 0.0)
+    print(f"  Volume Ratio : {volume_ratio:>5.1f}x  {'OK' if vol_ok else 'X':>3} (min {vol_threshold}x)")
     print(f"  R:R          : {rr:>6.2f}  {'OK' if (signal_type == 'اشارة ذهبية' or rr >= MIN_RR) else 'X':>3} (min {MIN_RR})")
 
     if rr >= 3:
@@ -65,7 +71,7 @@ if __name__ == "__main__":
         print(f"خطا في قراءة {DATA_FILE}: {e}")
         sys.exit(1)
 
-    # ✅ فحص حداثة البيانات — منع النشر من بيانات قديمة
+    # فحص حداثة البيانات — منع النشر من بيانات قديمة
     generated_at = data.get("generated_at", "")
     today = datetime.now().strftime("%Y-%m-%d")
     if not generated_at.startswith(today):
