@@ -161,12 +161,11 @@ def enrich_top10_with_live_data(ranked):
             if s:
                 price = safe_float(s.get("price") or s.get("close"))
                 if price > 0:
-                    live_vol            = safe_float(s.get("volume"), stock["volume"])
                     stock["price"]          = price
                     stock["high"]           = safe_float(s.get("high"),   price * 1.01)
                     stock["low"]            = safe_float(s.get("low"),    price * 0.99)
-                    stock["volume"]         = live_vol
-                    stock["avg_volume"]     = safe_float(s.get("avg_volume")) or live_vol * 0.7
+                    stock["volume"]         = safe_float(s.get("volume"),  stock["volume"])
+                    stock["avg_volume"]     = safe_float(s.get("avg_volume"), stock["volume"] * 0.7)
                     stock["change_percent"] = safe_float(s.get("change_percent") or s.get("change_pct"))
                     stock["resistance"]     = safe_float(s.get("resistance"), stock["high"])
                     stock["support"]        = safe_float(s.get("support"),    stock["low"])
@@ -285,6 +284,151 @@ def build_signal_reason(reasons, resistance, vol_ratio, rsi, rs_rank,
         parts = reasons[:2]
 
     return " + ".join(parts[:4])
+
+
+# ═══════════════════════════════════════════════════════════════
+# OBV + MACD + 52-Week — تحليل عميق لأفضل 10 أسهم
+# ═══════════════════════════════════════════════════════════════
+
+def _ema(closes, p):
+    if len(closes) < p: return closes[-1] if closes else 0
+    k = 2/(p+1); e = sum(closes[:p])/p
+    for c in closes[p:]: e = c*k + e*(1-k)
+    return round(e, 6)
+
+
+def _obv(closes, vols):
+    o = [0.0]
+    for i in range(1, len(closes)):
+        if closes[i] > closes[i-1]:   o.append(o[-1] + vols[i])
+        elif closes[i] < closes[i-1]: o.append(o[-1] - vols[i])
+        else:                          o.append(o[-1])
+    return o
+
+
+def _calc_obv_score(closes, vols):
+    """OBV Divergence — اكتشاف التراكم الخفي"""
+    if len(closes) < 10: return 0, "بيانات غير كافية"
+    obv = _obv(closes, vols)
+    lb  = min(10, len(closes)-1)
+    pc  = (closes[-1] - closes[-lb]) / closes[-lb] * 100
+    oc  = (obv[-1] - obv[-lb]) / (abs(obv[-lb]) + 1) * 100
+    if pc < -1 and oc > 5:   return 15, f"Divergence ايجابي: سعر {pc:.1f}% OBV +{oc:.1f}% — تراكم خفي"
+    elif pc > 1 and oc > 5:  return 10, f"تأكيد صعود: OBV +{oc:.1f}%"
+    elif pc > 1 and oc < -5: return -5, f"تحذير ضعف خفي: OBV {oc:.1f}%"
+    else:                     return  3, f"OBV محايد"
+
+
+def _calc_macd_score(closes):
+    """MACD Crossover — تأكيد الزخم"""
+    if len(closes) < 26: return 0, "بيانات غير كافية"
+    ef = _ema(closes, 12); es = _ema(closes, 26); macd = ef - es
+    ms = [_ema(closes[:i],12) - _ema(closes[:i],26) for i in range(26, len(closes)+1)]
+    sig  = _ema(ms, 9) if len(ms) >= 9 else macd
+    hist = macd - sig
+    cross = False
+    if len(closes) >= 29:
+        m3  = _ema(closes[:-3],12) - _ema(closes[:-3],26)
+        ms3 = [_ema(closes[:-3][:i],12) - _ema(closes[:-3][:i],26) for i in range(26, len(closes)-2)]
+        s3  = _ema(ms3, 9) if len(ms3) >= 9 else m3
+        cross = m3 < s3 and macd > sig
+    if cross:                   return 15, f"تقاطع صعودي حديث MACD {macd:.3f}"
+    elif macd > sig and hist>0: return 12, f"MACD صاعد + Histogram يتوسع"
+    elif macd > sig:            return  8, f"MACD فوق Signal"
+    elif hist > -0.01:          return  3, f"MACD يقترب من التقاطع"
+    else:                       return  0, f"MACD تحت Signal"
+
+
+def _calc_week52_score(closes, highs, price):
+    """52-Week Proximity — قرب القمة السنوية (منهجية O'Neil)"""
+    lookback = min(252, len(highs))
+    high_52w = max(highs[-lookback:]) if lookback > 0 else price
+    if high_52w <= 0: return 0, 0, "لا بيانات"
+    pct = price / high_52w * 100
+    if pct >= 97:   pts = 20; d = f"اختراق قمة 52 أسبوع ({pct:.1f}%)"
+    elif pct >= 90: pts = 14; d = f"قريب من قمة 52 أسبوع ({pct:.1f}%)"
+    elif pct >= 80: pts = 8;  d = f"ضمن نطاق 52 أسبوع ({pct:.1f}%)"
+    elif pct >= 60: pts = 3;  d = f"بعيد عن القمة ({pct:.1f}%)"
+    else:           pts = -5; d = f"في القاع ({pct:.1f}%)"
+    return pts, round(pct, 1), d
+
+
+def fetch_historical_for_daily(symbol, period=60):
+    """جلب بيانات تاريخية للتحليل العميق"""
+    try:
+        r = requests.get(
+            f"{API_URL}/historical/{symbol}/",
+            headers=HEADERS,
+            params={"period": period},
+            timeout=15
+        )
+        if r.status_code != 200: return None
+        data    = r.json()
+        history = data.get("data", [])
+        if len(history) < 15: return None
+        history = sorted(history, key=lambda x: x.get("date",""))
+        return {
+            "closes":  [safe_float(d.get("close"))  for d in history],
+            "highs":   [safe_float(d.get("high"))   for d in history],
+            "lows":    [safe_float(d.get("low"))     for d in history],
+            "volumes": [safe_float(d.get("volume"))  for d in history],
+        }
+    except Exception:
+        return None
+
+
+def enrich_top10_with_historical(ranked):
+    """
+    تحليل عميق لأفضل 10 أسهم:
+    OBV Divergence + MACD Crossover + 52-Week Proximity
+    """
+    print(f"\n  تحليل عميق (OBV + MACD + 52W) لأفضل {min(10,len(ranked))} أسهم...")
+    enriched = 0
+
+    for r in ranked[:10]:
+        stock = r["stock"]
+        sym   = str(stock.get("symbol",""))
+        price = safe_float(stock.get("price"))
+        if price <= 0: continue
+
+        hist = fetch_historical_for_daily(sym, period=60)
+        if not hist: continue
+
+        closes  = hist["closes"]
+        highs   = hist["highs"]
+        volumes = hist["volumes"]
+
+        obv_pts,  obv_detail  = _calc_obv_score(closes, volumes)
+        macd_pts, macd_detail = _calc_macd_score(closes)
+        w52_pts,  w52_pct, w52_detail = _calc_week52_score(closes, highs, price)
+
+        if len(volumes) >= 20:
+            avg20 = sum(volumes[-20:]) / 20
+            if avg20 > 0:
+                stock["avg_volume"] = avg20
+                vol = safe_float(stock.get("volume"))
+                r["volume_ratio"] = round(vol / avg20, 2)
+
+        stock["obv_score"]     = obv_pts
+        stock["obv_detail"]    = obv_detail
+        stock["macd_score"]    = macd_pts
+        stock["macd_detail"]   = macd_detail
+        stock["week52_pct"]    = w52_pct
+        stock["week52_detail"] = w52_detail
+        stock["week52_pts"]    = w52_pts
+
+        bonus      = obv_pts + macd_pts + w52_pts
+        r["score"] = max(0, min(r["score"] + bonus, 100))
+        r["bonus"] = bonus
+
+        icon = "↑" if bonus > 0 else ("↓" if bonus < 0 else "→")
+        print(f"    {stock.get('name','')[:18]:<18} OBV:{obv_pts:>3} "
+              f"MACD:{macd_pts:>3} 52W:{w52_pts:>3} {icon}{bonus:+d} → {r['score']}")
+        enriched += 1
+
+    ranked.sort(key=lambda x: x["score"], reverse=True)
+    print(f"  تم تحليل {enriched} سهم بعمق ✅")
+    return ranked
 
 
 def get_ml_score(symbol):
@@ -419,6 +563,21 @@ def build_daily_json(stock, score, reasons, rr, volume_ratio, news_analysis=None
     momentum = score_label(score)
     from_api = bool(API_KEY) and len(reasons) > 0
 
+    # أضف OBV وMACD وW52 في signal_reason إذا كانت قوية
+    obv_detail  = stock.get("obv_detail", "")
+    macd_detail = stock.get("macd_detail", "")
+    w52_detail  = stock.get("week52_detail", "")
+    obv_pts     = stock.get("obv_score", 0)
+    macd_pts    = stock.get("macd_score", 0)
+    w52_pts     = stock.get("week52_pts", 0)
+
+    extra = []
+    if obv_pts  >= 10: extra.append(obv_detail)
+    if macd_pts >= 12: extra.append(macd_detail)
+    if w52_pts  >= 14: extra.append(w52_detail)
+    if extra:
+        signal_reason = signal_reason + " + " + " + ".join(extra[:2])
+
     return {
         "brand":          "مضارب",
         "mode":           "morning",
@@ -440,6 +599,9 @@ def build_daily_json(stock, score, reasons, rr, volume_ratio, news_analysis=None
         "signal_reason":  signal_reason,
         "news_sentiment": news_sentiment,
         "news_summary":   news_summary,
+        "obv_score":      obv_pts,
+        "macd_score":     macd_pts,
+        "week52_pct":     stock.get("week52_pct", 0),
         "source":         "sahmk_api" if from_api else "market_snapshot",
         "generated_at":   datetime.now().strftime("%Y-%m-%d %H:%M"),
         "note":           f"قراءة فنية تعليمية: {signal_reason}.",
@@ -462,6 +624,7 @@ def claude_review(candidates, top_sectors):
             f"{i}. {s.get('name','')} ({s.get('symbol','')})\n"
             f"   Score: {c['score']} | RS Rank: {s.get('rs_rank',0)}\n"
             f"   RSI: {s.get('rsi',50):.0f} | Volume: {c['volume_ratio']:.1f}x\n"
+            f"   OBV: {s.get('obv_score','─')} | MACD: {s.get('macd_score','─')} | 52W: {s.get('week52_pct',0):.1f}%\n"
             f"   القطاع: {s.get('sector','')}\n"
             f"   الاسباب الفنية: {' + '.join(c['reasons'][:4])}\n"
             f"   R:R: {c['rr']}\n"
@@ -483,13 +646,13 @@ def claude_review(candidates, top_sectors):
 
 مهمتك:
 1. قيّم كل سهم بناءً على:
-   - المعطيات الفنية: Score، RSI، Volume، R:R، RS Rank، القطاع
-   - المعطيات الاخبارية: sentiment الاخبار وتاثيرها
-   - جودة الفرصة: هل الاهداف واقعية؟ هل المخاطرة محسوبة؟
+   - Score الكلي + OBV (تراكم خفي) + MACD (زخم) + 52W (قرب القمة السنوية)
+   - RSI، Volume، R:R، RS Rank، القطاع
+   - الاخبار وتاثيرها
 
 2. اتخذ قرارك:
    - اذا وجدت سهماً جيداً: اختره واشرح لماذا
-   - اذا كانت جميع الاسهم ضعيفة او محفوفة بمخاطر: ارفض النشر
+   - اذا كانت جميع الاسهم ضعيفة: ارفض النشر
 
 اجب بـ JSON فقط:
 {{
@@ -504,10 +667,10 @@ def claude_review(candidates, top_sectors):
 
 معايير الرفض — ارفض اذا:
 - Score اقل من 70 لجميع المرشحين
-- RSI فوق 75 لجميعهم تشبع شرائي
-- اخبار سلبية قوية على المرشح الاول
+- RSI فوق 75 لجميعهم
+- اخبار سلبية قوية
 - R:R اقل من 1 لجميعهم
-- لا يوجد زخم واضح في اي قطاع
+- OBV سلبي (تحذير ضعف خفي) على المرشح الاول
 """
 
     try:
@@ -562,7 +725,7 @@ def main():
 
     if not is_market_open():
         print("السوق مغلق الان - لا يتم النشر")
-        sys.exit(0)  # ليس خطأ — سلوك طبيعي متوقع
+        sys.exit(0)
 
     top_sectors = []
     try:
@@ -615,15 +778,23 @@ def main():
         raise RuntimeError("no stocks after scoring")
 
     ranked.sort(key=lambda x: x["score"], reverse=True)
+
+    # تحديث أفضل 10 ببيانات حية
     ranked = enrich_top10_with_live_data(ranked)
 
+    # تحليل عميق OBV + MACD + 52W لأفضل 10
+    ranked = enrich_top10_with_historical(ranked)
+
     print(f"\n{'='*60}")
-    print("Top 5 TASI:")
+    print("Top 5 TASI — بعد التحليل العميق:")
     for i, r in enumerate(ranked[:5], 1):
-        s = r["stock"]
-        print(f"  {i}. {s.get('name','')[:20]:<20} ({s.get('symbol'):>4}) "
-              f"Score:{r['score']:>4} RS:{s.get('rs_rank',0):>3} "
-              f"Vol:{r['volume_ratio']:.1f}x Sec:{s.get('sector','')}")
+        s    = r["stock"]
+        w52  = s.get("week52_pct", 0)
+        obv  = s.get("obv_score", "─")
+        macd = s.get("macd_score", "─")
+        print(f"  {i}. {s.get('name','')[:18]:<18} ({s.get('symbol'):>4}) "
+              f"Score:{r['score']:>4} 52W:{w52:>5.1f}% "
+              f"OBV:{obv:>3} MACD:{macd:>3} Vol:{r['volume_ratio']:.1f}x")
 
     print(f"\n{'='*60}")
     print("تحليل الاخبار...")
@@ -691,6 +862,7 @@ def main():
     print(f" Selected   : {daily_data['stock_name']} ({daily_data['symbol']})")
     print(f"  Score     : {daily_data['score']} | Momentum: {daily_data['momentum']}")
     print(f"  Entry     : {daily_data['entry']} | T1: {daily_data['target1']} | SL: {daily_data['stop_loss']}")
+    print(f"  OBV       : {daily_data.get('obv_score','─')} | MACD: {daily_data.get('macd_score','─')} | 52W: {daily_data.get('week52_pct',0):.1f}%")
     print(f"  Claude    : {claude_reason}")
     print(f"  Confidence: {claude_conf}")
     if claude_warning:
