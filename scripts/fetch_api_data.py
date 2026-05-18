@@ -586,14 +586,6 @@ def main():
     if not stocks:
         raise RuntimeError("no stocks found")
 
-    # فلتر السيولة: استبعاد الأسهم التي لا تُتداول (volume = 0)
-    stocks_with_volume = [s for s in stocks if safe_float(s.get("volume")) > 0]
-    if len(stocks_with_volume) >= 5:
-        stocks = stocks_with_volume
-        print(f"  بعد فلتر السيولة: {len(stocks)} سهم نشط")
-    else:
-        print(f"  تحذير: معظم الأسهم بلا حجم — يُكمل بدون فلتر")
-
     ranked = []
     for stock in stocks:
         if safe_float(stock.get("price")) <= 0:
