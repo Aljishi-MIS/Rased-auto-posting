@@ -9,7 +9,7 @@ RSI_MIN            = 45
 RSI_MAX            = 70
 MIN_VOLUME_RATIO   = 1.3
 MIN_VOLUME_HIGH_RR = 1.1
-MIN_RR             = 1.2   # 1.2 للإشارات ذات Score عالٍ
+MIN_RR             = 1.2
 
 
 def check(data):
@@ -24,8 +24,10 @@ def check(data):
     vol_threshold = MIN_VOLUME_HIGH_RR if rr >= 3 else MIN_VOLUME_RATIO
 
     reasons_fail = []
+
     if score < MIN_SCORE:
         reasons_fail.append(f"Score {score} < {MIN_SCORE}")
+
     if not (RSI_MIN <= rsi <= RSI_MAX):
         reasons_fail.append(f"RSI {rsi:.0f} خارج النطاق ({RSI_MIN}-{RSI_MAX})")
 
@@ -36,7 +38,10 @@ def check(data):
             reasons_fail.append(f"Volume {volume_ratio:.1f}x < {vol_threshold}x")
 
     if signal_type != "اشارة ذهبية" and rr < MIN_RR:
-        reasons_fail.append(f"R:R {rr:.2f} < {MIN_RR} (الربح أقل من الخسارة)")
+        if score >= 85 and rr >= 1.0:
+            print(f"  ** R:R {rr:.2f} مقبول لـ Score {score} — Claude يقرر")
+        else:
+            reasons_fail.append(f"R:R {rr:.2f} < {MIN_RR} (الربح أقل من الخسارة)")
 
     print(f"\n{'='*55}")
     print(f"فحص جودة الاشارة: {name} ({symbol})")
@@ -45,7 +50,8 @@ def check(data):
     print(f"  RSI          : {rsi:>6.0f}  {'OK' if RSI_MIN <= rsi <= RSI_MAX else 'X':>3} ({RSI_MIN}-{RSI_MAX})")
     vol_ok = volume_ratio >= vol_threshold or (score >= 85 and volume_ratio == 0.0)
     print(f"  Volume Ratio : {volume_ratio:>5.1f}x  {'OK' if vol_ok else 'X':>3} (min {vol_threshold}x)")
-    print(f"  R:R          : {rr:>6.2f}  {'OK' if (signal_type == 'اشارة ذهبية' or rr >= MIN_RR) else 'X':>3} (min {MIN_RR})")
+    rr_ok = signal_type == "اشارة ذهبية" or rr >= MIN_RR or (score >= 85 and rr >= 1.0)
+    print(f"  R:R          : {rr:>6.2f}  {'OK' if rr_ok else 'X':>3} (min {MIN_RR})")
 
     if rr >= 3:
         print(f"  ** R:R ممتاز — تم تخفيف معيار الحجم إلى {MIN_VOLUME_HIGH_RR}x")
