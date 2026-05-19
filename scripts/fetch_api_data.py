@@ -258,28 +258,22 @@ def build_signal_reason(reasons, resistance, vol_ratio, rsi, rs_rank,
 
     if any("اختراق" in r or "قريب" in r for r in reasons):
         parts.append(f"اختراق {resistance:.2f}")
-
     if vol_ratio >= 2:
         parts.append(f"سيولة {vol_ratio:.1f}x فوق المتوسط")
     elif vol_ratio >= 1.5:
         parts.append(f"سيولة {vol_ratio:.1f}x")
-
     if 50 <= rsi <= 65:
         parts.append(f"RSI {rsi:.0f} في المنطقة الذهبية")
     elif 40 <= rsi < 50:
         parts.append(f"RSI {rsi:.0f} بداية زخم")
-
     if rs_rank >= 80:
         parts.append(f"RS Rank {rs_rank} قائد السوق")
-
     if sector and sector != "اخرى":
         parts.append(f"قطاع {sector} صاعد")
-
     if news_sentiment == "positive" and news_reason:
         parts.append(f"اخبار ايجابية: {news_reason}")
     elif news_sentiment == "negative" and news_reason:
         parts.append(f"تحذير: {news_reason}")
-
     if not parts:
         parts = reasons[:2]
 
@@ -307,7 +301,6 @@ def _obv(closes, vols):
 
 
 def _calc_obv_score(closes, vols):
-    """OBV Divergence — اكتشاف التراكم الخفي"""
     if len(closes) < 10: return 0, "بيانات غير كافية"
     obv = _obv(closes, vols)
     lb  = min(10, len(closes)-1)
@@ -320,7 +313,6 @@ def _calc_obv_score(closes, vols):
 
 
 def _calc_macd_score(closes):
-    """MACD Crossover — تأكيد الزخم"""
     if len(closes) < 26: return 0, "بيانات غير كافية"
     ef = _ema(closes, 12); es = _ema(closes, 26); macd = ef - es
     ms = [_ema(closes[:i],12) - _ema(closes[:i],26) for i in range(26, len(closes)+1)]
@@ -340,7 +332,6 @@ def _calc_macd_score(closes):
 
 
 def _calc_week52_score(closes, highs, price):
-    """52-Week Proximity — قرب القمة السنوية (منهجية O'Neil)"""
     lookback = min(252, len(highs))
     high_52w = max(highs[-lookback:]) if lookback > 0 else price
     if high_52w <= 0: return 0, 0, "لا بيانات"
@@ -354,7 +345,6 @@ def _calc_week52_score(closes, highs, price):
 
 
 def fetch_historical_for_daily(symbol, period=60):
-    """جلب بيانات تاريخية للتحليل العميق"""
     try:
         r = requests.get(
             f"{API_URL}/historical/{symbol}/",
@@ -378,10 +368,6 @@ def fetch_historical_for_daily(symbol, period=60):
 
 
 def enrich_top10_with_historical(ranked):
-    """
-    تحليل عميق لأفضل 10 أسهم:
-    OBV Divergence + MACD Crossover + 52-Week Proximity
-    """
     print(f"\n  تحليل عميق (OBV + MACD + 52W) لأفضل {min(10,len(ranked))} أسهم...")
     enriched = 0
 
@@ -440,7 +426,7 @@ def get_ml_score(symbol):
         if hist:
             return predict(symbol, hist)
     except Exception:
-        pass  # ml_model.json غير موجود بعد
+        pass
     return 50.0
 
 
@@ -560,23 +546,19 @@ def build_daily_json(stock, score, reasons, rr, volume_ratio, news_analysis=None
         rs_rank, sector, news_reason, news_sentiment
     )
 
-    momentum = score_label(score)
-    from_api = bool(API_KEY) and len(reasons) > 0
-
     # أضف OBV وMACD وW52 في signal_reason إذا كانت قوية
-    obv_detail  = stock.get("obv_detail", "")
-    macd_detail = stock.get("macd_detail", "")
-    w52_detail  = stock.get("week52_detail", "")
-    obv_pts     = stock.get("obv_score", 0)
-    macd_pts    = stock.get("macd_score", 0)
-    w52_pts     = stock.get("week52_pts", 0)
-
-    extra = []
-    if obv_pts  >= 10: extra.append(obv_detail)
-    if macd_pts >= 12: extra.append(macd_detail)
-    if w52_pts  >= 14: extra.append(w52_detail)
+    obv_pts  = stock.get("obv_score", 0)
+    macd_pts = stock.get("macd_score", 0)
+    w52_pts  = stock.get("week52_pts", 0)
+    extra    = []
+    if obv_pts  >= 10: extra.append(stock.get("obv_detail", ""))
+    if macd_pts >= 12: extra.append(stock.get("macd_detail", ""))
+    if w52_pts  >= 14: extra.append(stock.get("week52_detail", ""))
     if extra:
         signal_reason = signal_reason + " + " + " + ".join(extra[:2])
+
+    momentum = score_label(score)
+    from_api = bool(API_KEY) and len(reasons) > 0
 
     return {
         "brand":          "مضارب",
@@ -670,7 +652,7 @@ def claude_review(candidates, top_sectors):
 - RSI فوق 75 لجميعهم
 - اخبار سلبية قوية
 - R:R اقل من 1 لجميعهم
-- OBV سلبي (تحذير ضعف خفي) على المرشح الاول
+- OBV سلبي على المرشح الاول
 """
 
     try:
@@ -727,6 +709,7 @@ def main():
         print("السوق مغلق الان - لا يتم النشر")
         sys.exit(0)
 
+    # الخطوة 1 — market_intelligence مع كاش 20 دقيقة
     top_sectors = []
     try:
         import os as _os
@@ -738,7 +721,15 @@ def main():
         print(f"\n Market Intelligence: {count} سهم | Sectors: {', '.join(top_sectors)}")
     except Exception as e:
         print(f"\n Market Intelligence error: {e}")
+        # Fallback: قراءة من الكاش إذا فشل التشغيل
+        try:
+            with open(INTEL_FILE, "r", encoding="utf-8") as f_intel:
+                intel_cache = json.load(f_intel)
+                top_sectors = intel_cache.get("top_sectors", [])
+        except Exception:
+            pass
 
+    # الخطوة 2 — قراءة الأسهم من market_intel.json
     stocks, intel_sectors = load_all_stocks_from_intel()
     if intel_sectors:
         top_sectors = intel_sectors
@@ -749,6 +740,7 @@ def main():
     if not stocks:
         raise RuntimeError("no stocks found")
 
+    # الخطوة 3 — تقييم جميع الأسهم
     ranked = []
     for stock in stocks:
         if safe_float(stock.get("price")) <= 0:
@@ -779,10 +771,10 @@ def main():
 
     ranked.sort(key=lambda x: x["score"], reverse=True)
 
-    # تحديث أفضل 10 ببيانات حية
+    # الخطوة 4 — تحديث أفضل 10 ببيانات حية
     ranked = enrich_top10_with_live_data(ranked)
 
-    # تحليل عميق OBV + MACD + 52W لأفضل 10
+    # الخطوة 4b — تحليل عميق OBV + MACD + 52W
     ranked = enrich_top10_with_historical(ranked)
 
     print(f"\n{'='*60}")
@@ -796,6 +788,7 @@ def main():
               f"Score:{r['score']:>4} 52W:{w52:>5.1f}% "
               f"OBV:{obv:>3} MACD:{macd:>3} Vol:{r['volume_ratio']:.1f}x")
 
+    # الخطوة 5 — أخبار
     print(f"\n{'='*60}")
     print("تحليل الاخبار...")
 
@@ -826,6 +819,7 @@ def main():
 
     final_candidates.sort(key=lambda x: x["score"], reverse=True)
 
+    # الخطوة 6 — Claude يقرر
     print(f"\n{'='*60}")
     print("Claude يراجع ويقرر...")
 
