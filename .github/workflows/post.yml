@@ -2,65 +2,57 @@ name: TASI AI — مضارب | Auto Post
 
 on:
   schedule:
-    # يعمل كل يوم من الأحد إلى الخميس
-    - cron: '0 7 * * 0-4'   # 10:00 صباحاً بتوقيت الرياض (UTC+3)
-    - cron: '0 9 * * 0-4'   # 12:00 ظهراً
-    - cron: '0 11 * * 0-4'  # 02:00 عصراً
-  workflow_dispatch:          # تشغيل يدوي
+    - cron: '0 7 * * 0-4'    # 10:00 صباحاً توقيت الرياض
+    - cron: '0 9 * * 0-4'    # 12:00 ظهراً
+    - cron: '0 11 * * 0-4'   # 02:00 عصراً
+  workflow_dispatch:
 
 jobs:
   post:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. سحب الكود ──────────────────────────────────────────
+
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ── 2. إعداد Python ───────────────────────────────────────
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # ── 3. تثبيت المكتبات ─────────────────────────────────────
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
           pip install requests anthropic pillow
 
-      # ── 4. إنشاء مجلد data ────────────────────────────────────
       - name: Create Data Directory
         run: mkdir -p data
 
-      # ── 5. جلب وتحليل بيانات السوق ───────────────────────────
-      - name: Fetch & Analyze Market Data
+      # ── الخطوة 1: تحليل أسهم تاسي واختيار Top 3 ──────────────
+      - name: Analyze TASI Stocks
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          API_URL: ${{ secrets.API_URL }}
+        run: python scripts/historical_analyzer.py
+
+      # ── الخطوة 2: Claude يراجع Top 3 ─────────────────────────
+      - name: Claude AI Review
         env:
           API_KEY: ${{ secrets.API_KEY }}
           API_URL: ${{ secrets.API_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scripts/fetch_api_data.py
 
-      # ── 6. فحص جودة الإشارة ───────────────────────────────────
+      # ── الخطوة 3: فحص جودة الإشارة ───────────────────────────
       - name: Check Signal Quality
-        env:
-          API_KEY: ${{ secrets.API_KEY }}
-          API_URL: ${{ secrets.API_URL }}
         run: python scripts/should_post.py
 
-      # ── 7. تحليل الإشارة وانتقاء الأفضل ──────────────────────
-      - name: Analyze & Select Best Signal
-        env:
-          API_KEY: ${{ secrets.API_KEY }}
-          API_URL: ${{ secrets.API_URL }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python scripts/historical_analyzer.py
-
-      # ── 8. توليد صورة الإشارة ─────────────────────────────────
+      # ── الخطوة 4: توليد الصورة ────────────────────────────────
       - name: Generate Signal Image
         run: python scripts/generate_post.py
 
-      # ── 9. نشر الإشارة اليومية على تلغرام ────────────────────
+      # ── الخطوة 5: نشر الإشارة اليومية على تلغرام ─────────────
       - name: Post Daily Signal to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -72,53 +64,32 @@ jobs:
           token      = os.environ["TELEGRAM_BOT_TOKEN"]
           channel_id = os.environ["TELEGRAM_CHANNEL_ID"]
 
-          # قراءة بيانات الإشارة
           with open("data/daily.json", encoding="utf-8") as f:
               sig = json.load(f)
 
-          name       = sig.get("stock_name", "")
-          symbol     = sig.get("symbol", "")
-          entry      = sig.get("entry", 0)
-          t1         = sig.get("target1", 0)
-          t2         = sig.get("target2", 0)
-          sl         = sig.get("stop_loss", 0)
-          t1_pct     = sig.get("target1_pct", 0)
-          t2_pct     = sig.get("target2_pct", 0)
-          sl_pct     = sig.get("stop_loss_pct", 0)
-          rr         = sig.get("rr", 0)
-          score      = sig.get("score", 0)
-          days_exp   = sig.get("expected_days", 7)
-          days_max   = sig.get("max_days", 10)
-          reason     = sig.get("claude_reason", "")
-          confidence = sig.get("claude_confidence", score)
-          warning    = sig.get("claude_warning", None)
           is_golden  = sig.get("is_golden", False)
+          tag        = "⭐ إشارة ذهبية" if is_golden else "📈 إشارة يومية"
+          warning    = sig.get("claude_warning", None)
 
-          tag = "⭐ إشارة ذهبية" if is_golden else "📈 إشارة يومية"
-
-          caption = f"""
-{tag}
+          caption = f"""{tag}
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-🏦 {name} ({symbol})
+🏦 {sig.get('stock_name','')} ({sig.get('symbol','')})
 
-💰 نقطة الدخول : {entry} ريال
-🎯 الهدف الأول : {t1} ريال (+{t1_pct}%)
-🎯 الهدف الثاني: {t2} ريال (+{t2_pct}%)
-🛑 وقف الخسارة : {sl} ريال (-{sl_pct}%)
+💰 نقطة الدخول : {sig.get('entry','')} ريال
+🎯 الهدف الأول : {sig.get('target1','')} ريال (+{sig.get('target1_pct','')}%)
+🎯 الهدف الثاني: {sig.get('target2','')} ريال (+{sig.get('target2_pct','')}%)
+🛑 وقف الخسارة : {sig.get('stop_loss','')} ريال (-{sig.get('stop_loss_pct','')}%)
 
-⏱ الإطار الزمني: {days_exp} أيام (أقصاه {days_max})
-⚖️ مكافأة/مخاطرة: {rr}:1
-📊 قوة الإشارة : {score}/100
-🤖 ثقة الذكاء الاصطناعي: {confidence}%
+⏱ الإطار الزمني: {sig.get('expected_days',7)} أيام (أقصاه {sig.get('max_days',10)})
+⚖️ مكافأة/مخاطرة: {sig.get('rr','')}:1
+📊 قوة الإشارة : {sig.get('score','')}/100
+🤖 ثقة Claude  : {sig.get('claude_confidence', sig.get('score',''))}%
 
-💡 {reason}
+💡 {sig.get('claude_reason','')}
 {f"⚠️ {warning}" if warning else ""}
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ هذه تحليلات تعليمية فقط
-المستثمر يتخذ قراره بنفسه
-          """.strip()
+⚠️ تحليلات تعليمية فقط — المستثمر يتخذ قراره بنفسه""".strip()
 
-          # إرسال الصورة مع النص
           with open("data/signal_image.png", "rb") as img:
               r = requests.post(
                   f"https://api.telegram.org/bot{token}/sendPhoto",
@@ -126,11 +97,14 @@ jobs:
                   files={"photo": img},
                   timeout=30
               )
-          print("✅ نُشرت الإشارة اليومية" if r.status_code == 200
-                else f"❌ فشل النشر: {r.text}")
+          if r.status_code == 200:
+              print("✅ نُشرت الإشارة اليومية")
+          else:
+              print(f"❌ فشل النشر: {r.text}")
+              exit(1)
           EOF
 
-      # ── 10. نشر الإشارة الذهبية (إن وجدت) ───────────────────
+      # ── الخطوة 6: نشر الإشارة الذهبية إن وجدت ───────────────
       - name: Post Golden Signal to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -149,44 +123,26 @@ jobs:
           with open("data/golden_signal.json", encoding="utf-8") as f:
               sig = json.load(f)
 
-          name       = sig.get("stock_name", "")
-          symbol     = sig.get("symbol", "")
-          entry      = sig.get("entry", 0)
-          t1         = sig.get("target1", 0)
-          t2         = sig.get("target2", 0)
-          sl         = sig.get("stop_loss", 0)
-          t1_pct     = sig.get("target1_pct", 0)
-          t2_pct     = sig.get("target2_pct", 0)
-          sl_pct     = sig.get("stop_loss_pct", 0)
-          rr         = sig.get("rr", 0)
-          score      = sig.get("score", 0)
-          days_exp   = sig.get("expected_days", 7)
-          days_max   = sig.get("max_days", 10)
-          reason     = sig.get("claude_reason", "")
-          confidence = sig.get("claude_confidence", score)
-          warning    = sig.get("claude_warning", None)
+          warning = sig.get("claude_warning", None)
 
-          caption = f"""
-⭐ إشارة ذهبية حصرية ⭐
+          caption = f"""⭐ إشارة ذهبية حصرية ⭐
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-🏦 {name} ({symbol})
+🏦 {sig.get('stock_name','')} ({sig.get('symbol','')})
 
-💰 نقطة الدخول : {entry} ريال
-🎯 الهدف الأول : {t1} ريال (+{t1_pct}%)
-🎯 الهدف الثاني: {t2} ريال (+{t2_pct}%)
-🛑 وقف الخسارة : {sl} ريال (-{sl_pct}%)
+💰 نقطة الدخول : {sig.get('entry','')} ريال
+🎯 الهدف الأول : {sig.get('target1','')} ريال (+{sig.get('target1_pct','')}%)
+🎯 الهدف الثاني: {sig.get('target2','')} ريال (+{sig.get('target2_pct','')}%)
+🛑 وقف الخسارة : {sig.get('stop_loss','')} ريال (-{sig.get('stop_loss_pct','')}%)
 
-⏱ الإطار الزمني: {days_exp} أيام (أقصاه {days_max})
-⚖️ مكافأة/مخاطرة: {rr}:1
-📊 قوة الإشارة : {score}/100
-🤖 ثقة الذكاء الاصطناعي: {confidence}%
+⏱ الإطار الزمني: {sig.get('expected_days',7)} أيام (أقصاه {sig.get('max_days',10)})
+⚖️ مكافأة/مخاطرة: {sig.get('rr','')}:1
+📊 قوة الإشارة : {sig.get('score','')}/100
+🤖 ثقة Claude  : {sig.get('claude_confidence', sig.get('score',''))}%
 
-💡 {reason}
+💡 {sig.get('claude_reason','')}
 {f"⚠️ {warning}" if warning else ""}
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ هذه تحليلات تعليمية فقط
-المستثمر يتخذ قراره بنفسه
-          """.strip()
+⚠️ تحليلات تعليمية فقط — المستثمر يتخذ قراره بنفسه""".strip()
 
           with open("data/golden_image.png", "rb") as img:
               r = requests.post(
@@ -196,17 +152,19 @@ jobs:
                   timeout=30
               )
           print("✅ نُشرت الإشارة الذهبية" if r.status_code == 200
-                else f"❌ فشل النشر: {r.text}")
+                else f"❌ {r.text}")
           EOF
 
-      # ── 11. حفظ السجل في الـ Repository ──────────────────────
-      - name: Save Signal Log
+      # ── الخطوة 7: حفظ السجل ───────────────────────────────────
+      - name: Save & Commit Signal Log
         run: |
           python - <<'EOF'
           import json, csv, os
-          from datetime import datetime
 
-          for fname, stype in [("data/daily.json","daily"), ("data/golden_signal.json","golden")]:
+          for fname, stype in [
+              ("data/daily.json",  "daily"),
+              ("data/golden_signal.json", "golden")
+          ]:
               if not os.path.exists(fname):
                   continue
               with open(fname, encoding="utf-8") as f:
@@ -214,13 +172,13 @@ jobs:
               log_file = "data/signals_log.csv"
               exists   = os.path.exists(log_file)
               with open(log_file, "a", newline="", encoding="utf-8") as f:
-                  w = csv.DictWriter(f, fieldnames=[
-                      "date","time","type","symbol","stock_name",
-                      "entry","target1","target2","stop_loss",
-                      "target1_pct","target2_pct","score",
-                      "claude_confidence","status"
-                  ])
-                  if not exists: w.writeheader()
+                  fields = ["date","time","type","symbol","stock_name",
+                            "entry","target1","target2","stop_loss",
+                            "target1_pct","target2_pct","score",
+                            "claude_confidence","status"]
+                  w = csv.DictWriter(f, fieldnames=fields)
+                  if not exists:
+                      w.writeheader()
                   w.writerow({
                       "date":             sig.get("date",""),
                       "time":             sig.get("time",""),
@@ -239,10 +197,8 @@ jobs:
                   })
           EOF
 
-      - name: Commit Signal Log
-        run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/signals_log.csv || true
-          git diff --staged --quiet || git commit -m "📊 تحديث سجل الإشارات $(date +'%Y-%m-%d %H:%M')"
+          git diff --staged --quiet || git commit -m "📊 سجل إشارة $(date +'%Y-%m-%d %H:%M')"
           git push || true
