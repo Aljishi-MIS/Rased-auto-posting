@@ -1,103 +1,139 @@
-"""
-should_post.py  ─ مُحدَّث
-==========================
-شروط النشر الجديدة:
-  ✅ Score ≥ 78  |  RSI 42-68  |  حجم ≥ 2×  |  R:R ≥ 2.5  |  هدف ثانٍ ≥ 10%
-  ⭐ ذهبية: Score ≥ 88  |  حجم ≥ 2.5×  |  R:R ≥ 3  |  هدف ثانٍ ≥ 12%
-"""
-
-import json, os, sys
+import json
+import sys
 from datetime import datetime
 
-DAILY_FILE  = "data/daily.json"
+DATA_FILE   = "data/daily.json"
 GOLDEN_FILE = "data/golden_signal.json"
 
+# ─── معايير الإشارة اليومية (هدف ثانٍ 10% خلال 10 أيام) ────
 MIN_SCORE        = 78
 MIN_RSI          = 42
 MAX_RSI          = 68
-MIN_VOLUME_RATIO = 2.0
-MIN_RR           = 2.5
+MIN_VOLUME_RATIO = 1.5   # مرن بسبب مشكلة API
+MIN_RR           = 2.0   # R:R محسوب على T2 (10%)
 
-GOLDEN_MIN_SCORE = 88
-GOLDEN_MIN_VOL   = 2.5
-GOLDEN_MIN_RR    = 3.0
-
-
-def load_json(path):
-    if not os.path.exists(path): return None
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except: return None
+# ─── معايير الإشارة الذهبية (قبل السوق) ────────────────────
+GOLDEN_MIN_SCORE = 50
+GOLDEN_RSI_MIN   = 35
+GOLDEN_RSI_MAX   = 75
+GOLDEN_MIN_RR    = 1.5
 
 
-def check_quality(data, is_golden=False):
-    fails      = []
-    score      = float(data.get("score",        0))
-    rsi        = float(data.get("rsi",          50))
-    vol_ratio  = float(data.get("volume_ratio", 0))
-    rr         = float(data.get("rr",           0))
-    t2_pct     = float(data.get("target2_pct",  0))
+def check_golden(data):
+    """معايير الإشارة الذهبية قبل السوق"""
+    score  = data.get("score", 0)
+    rsi    = data.get("rsi", 50)
+    rr     = data.get("rr", 0)
+    symbol = data.get("symbol", "")
+    name   = data.get("stock_name", "")
+    stype  = data.get("signal_type", "")
+    t2_pct = data.get("target2_pct", 0)
+    accel  = data.get("acceleration", 0)
 
-    min_score = GOLDEN_MIN_SCORE if is_golden else MIN_SCORE
-    min_vol   = GOLDEN_MIN_VOL   if is_golden else MIN_VOLUME_RATIO
-    min_rr    = GOLDEN_MIN_RR    if is_golden else MIN_RR
-    min_t2    = 12.0             if is_golden else 10.0
+    fails = []
+    if score < GOLDEN_MIN_SCORE:
+        fails.append(f"Score {score} < {GOLDEN_MIN_SCORE}")
+    if not (GOLDEN_RSI_MIN <= rsi <= GOLDEN_RSI_MAX):
+        fails.append(f"RSI {rsi:.0f} خارج النطاق ({GOLDEN_RSI_MIN}-{GOLDEN_RSI_MAX})")
+    if rr < GOLDEN_MIN_RR:
+        fails.append(f"R:R {rr:.1f} < {GOLDEN_MIN_RR}")
 
-    if score     < min_score:              fails.append(f"Score منخفض ({score:.0f} < {min_score})")
-    if not (MIN_RSI <= rsi <= MAX_RSI):    fails.append(f"RSI خارج النطاق ({rsi:.1f}) — المقبول: {MIN_RSI}-{MAX_RSI}")
-    if vol_ratio < min_vol:                fails.append(f"حجم ضعيف ({vol_ratio:.1f}x < {min_vol}x)")
-    if rr        < min_rr:                 fails.append(f"R:R منخفض ({rr:.1f} < {min_rr})")
-    if t2_pct    < min_t2:                 fails.append(f"هدف ثانٍ أقل من {min_t2}% (= {t2_pct}%)")
+    print(f"\n{'='*55}")
+    print(f"فحص الإشارة الذهبية: {name} ({symbol})")
+    print(f"النوع: {stype}")
+    print(f"{'='*55}")
+    print(f"  Score     : {score:>5}  {'OK' if score >= GOLDEN_MIN_SCORE else 'X'} (min {GOLDEN_MIN_SCORE})")
+    print(f"  RSI       : {rsi:>5.0f}  {'OK' if GOLDEN_RSI_MIN <= rsi <= GOLDEN_RSI_MAX else 'X'} ({GOLDEN_RSI_MIN}-{GOLDEN_RSI_MAX})")
+    print(f"  R:R       : {rr:>5.1f}  {'OK' if rr >= GOLDEN_MIN_RR else 'X'} (min {GOLDEN_MIN_RR})")
+    print(f"  هدف ثانٍ : {t2_pct:>4.0f}%  {'OK' if t2_pct >= 10 else '─'}")
+    print(f"  تسارع     : {accel:>5}  {'قوي' if accel >= 30 else 'متوسط' if accel >= 15 else 'عادي'}")
+    print(f"  Volume    : تُتجاهل للإشارة الذهبية (بيانات تاريخية)")
 
-    now_h = datetime.now().hour
-    now_m = datetime.now().minute
-    if not ((now_h > 10 or (now_h == 10 and now_m >= 0)) and
-            (now_h < 15 or (now_h == 15 and now_m <= 0))):
-        fails.append("خارج ساعات السوق (10:00 - 15:00)")
+    if fails:
+        print(f"\nالإشارة الذهبية لا تستوفي المعايير:")
+        for f in fails:
+            print(f"   - {f}")
+        print(f"\nتم تخطي النشر\n")
+        return False
 
-    return len(fails) == 0, fails
+    print(f"\nالإشارة الذهبية تستوفي المعايير — سيتم النشر!\n")
+    return True
 
 
-def main():
-    print("=" * 60)
-    print("  فحص جودة الإشارة قبل النشر")
-    print("=" * 60)
+def check_daily(data):
+    """معايير الإشارة اليومية — هدف ثانٍ 10% خلال 10 أيام"""
+    score        = data.get("score", 0)
+    rsi          = data.get("rsi", 50)
+    volume_ratio = data.get("volume_ratio", 0)
+    rr           = data.get("rr", 0)
+    symbol       = data.get("symbol", "")
+    name         = data.get("stock_name", "")
+    t2_pct       = data.get("target2_pct", 0)
+    accel        = data.get("acceleration", 0)
 
-    daily = load_json(DAILY_FILE)
-    if not daily:
-        print("  ❌ daily.json غير موجود"); sys.exit(1)
+    fails = []
 
-    print(f"\n  السهم    : {daily.get('stock_name','')} ({daily.get('symbol','')})")
-    print(f"  Score    : {daily.get('score',0)}")
-    print(f"  RSI      : {daily.get('rsi',0)}")
-    print(f"  حجم×     : {daily.get('volume_ratio',0)}")
-    print(f"  R:R      : {daily.get('rr',0)}")
-    print(f"  هدف ثانٍ: +{daily.get('target2_pct',0)}%")
-    print(f"  ملاحظة  : {daily.get('note','')}")
-
-    passed, fails = check_quality(daily, is_golden=False)
-
-    if passed:
-        print("\n  ✅ الإشارة اجتازت الشروط — سيتم النشر")
-    else:
-        print("\n  ⛔ تم تخطي النشر — الأسباب:")
-        for r in fails: print(f"      • {r}")
-        sys.exit(1)
-
-    golden = load_json(GOLDEN_FILE)
-    if golden:
-        g_passed, g_fails = check_quality(golden, is_golden=True)
-        print(f"\n  ─── فحص الإشارة الذهبية ⭐ ───────────────────────")
-        print(f"  السهم : {golden.get('stock_name','')}  Score: {golden.get('score',0)}  هدف: +{golden.get('target2_pct',0)}%")
-        if g_passed: print("  ✅ الإشارة الذهبية جاهزة")
+    if score < MIN_SCORE:
+        fails.append(f"Score {score} < {MIN_SCORE}")
+    if not (MIN_RSI <= rsi <= MAX_RSI):
+        fails.append(f"RSI {rsi:.0f} خارج النطاق ({MIN_RSI}-{MAX_RSI})")
+    if rr < MIN_RR:
+        if score >= 85 and rr >= 1.5:
+            print(f"  ** R:R {rr:.1f} مقبول لـ Score {score}")
         else:
-            for r in g_fails: print(f"      • {r}")
-    else:
-        print("\n  ℹ️  لا إشارة ذهبية اليوم")
+            fails.append(f"R:R {rr:.1f} < {MIN_RR}")
+    if volume_ratio < MIN_VOLUME_RATIO:
+        if score >= 85 and volume_ratio == 0.0:
+            print(f"  ** Volume = 0 (مشكلة API) — مقبول لـ Score {score}")
+        else:
+            fails.append(f"Volume {volume_ratio:.1f}x < {MIN_VOLUME_RATIO}x")
+    if t2_pct > 0 and t2_pct < 10:
+        fails.append(f"هدف ثانٍ {t2_pct:.1f}% < 10%")
 
-    print("\n" + "=" * 60)
+    print(f"\n{'='*55}")
+    print(f"فحص جودة الاشارة: {name} ({symbol})")
+    print(f"{'='*55}")
+    print(f"  Score     : {score:>5}  {'OK' if score >= MIN_SCORE else 'X'} (min {MIN_SCORE})")
+    print(f"  RSI       : {rsi:>5.0f}  {'OK' if MIN_RSI <= rsi <= MAX_RSI else 'X'} ({MIN_RSI}-{MAX_RSI})")
+    print(f"  R:R       : {rr:>5.1f}  {'OK' if rr >= MIN_RR else 'X'} (min {MIN_RR} — T2 10%)")
+    vol_ok = volume_ratio >= MIN_VOLUME_RATIO or (score >= 85 and volume_ratio == 0.0)
+    print(f"  Volume    : {volume_ratio:>4.1f}x  {'OK' if vol_ok else 'X'} (min {MIN_VOLUME_RATIO}x)")
+    print(f"  هدف ثانٍ : {t2_pct:>4.0f}%  {'OK' if t2_pct >= 10 else '─'} (min 10%)")
+    print(f"  تسارع     : {accel:>5}  {'قوي' if accel >= 30 else 'متوسط' if accel >= 15 else 'عادي'}")
+
+    if fails:
+        print(f"\nالاشارة لا تستوفي المعايير:")
+        for f in fails:
+            print(f"   - {f}")
+        print(f"\nتم تخطي النشر اليوم\n")
+        return False
+
+    print(f"\nالاشارة تستوفي جميع المعايير — سيتم النشر!\n")
+    return True
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"خطا في قراءة {DATA_FILE}: {e}")
+        sys.exit(1)
+
+    generated_at = data.get("generated_at", "")
+    today = datetime.now().strftime("%Y-%m-%d")
+    if not generated_at.startswith(today):
+        print(f"البيانات قديمة ({generated_at or 'غير محدد'}) — تم الانتهاء")
+        sys.exit(1)
+
+    signal_type = data.get("type", "")
+    is_golden   = signal_type == "اشارة ذهبية"
+
+    if is_golden:
+        print("  نوع الإشارة: ذهبية — تطبيق معايير ما قبل السوق")
+        passed = check_golden(data)
+    else:
+        print("  نوع الإشارة: يومية — هدف ثانٍ 10% خلال 10 أيام")
+        passed = check_daily(data)
+
+    sys.exit(0 if passed else 1)
