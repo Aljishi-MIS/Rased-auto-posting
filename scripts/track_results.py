@@ -15,7 +15,7 @@ LOG_FILE  = "data/signals_log.csv"
 API_KEY   = os.environ.get("API_KEY")
 BASE_URL  = os.environ.get("API_URL", "https://app.sahmk.sa/api/v1")
 HEADERS   = {"X-API-Key": API_KEY} if API_KEY else {}
-MAX_DAYS  = 5   # أقصى مدة لإغلاق الإشارة
+MAX_DAYS  = 10   # ✅ محدَّث: 10 أيام بدل 5 (يتوافق مع هدف +10%)
 
 
 def get_price(symbol):
@@ -55,11 +55,11 @@ def update_signals():
 
         days_open = (today - signal_date).days
 
-        # إغلاق الإشارات القديمة جداً بدون نتيجة
+        # إغلاق الإشارات التي تجاوزت المدة القصوى
         if days_open > MAX_DAYS:
             row["status"] = "expired"
             updated += 1
-            print(f"  ⏰ {row['stock_name']} ({row['symbol']}) — انتهت المدة ({days_open} أيام)")
+            print(f"  ⏰ {row['stock_name']} ({row['symbol']}) — انتهت المدة ({days_open} أيام > {MAX_DAYS})")
             continue
 
         # تحقق من السعر الحالي
@@ -67,26 +67,38 @@ def update_signals():
         if price is None:
             continue
 
+        target2   = float(row.get("target2",   0) or 0)
         target1   = float(row.get("target1",   0) or 0)
         stop_loss = float(row.get("stop_loss", 0) or 0)
 
-        if target1 > 0 and price >= target1:
+        # WIN: وصل للهدف الثاني (+10%)
+        if target2 > 0 and price >= target2:
             row["status"]      = "win"
+            row["result"]      = "win_t2"
             row["close_price"] = f"{price:.2f}"
             row["close_date"]  = str(today)
             updated += 1
-            print(f"  ✅ WIN  {row['stock_name']} ({row['symbol']}) — السعر {price:.2f} >= هدف {target1:.2f}")
+            print(f"  🏆 WIN T2 {row['stock_name']} ({row['symbol']}) — {price:.2f} >= {target2:.2f} (+10%)")
 
+        # WIN جزئي: وصل للهدف الأول (+5%)
+        elif target1 > 0 and price >= target1 and row.get("result") != "win_t2":
+            row["result"]      = "win_t1"
+            row["close_price"] = f"{price:.2f}"
+            print(f"  ✅ WIN T1 {row['stock_name']} ({row['symbol']}) — {price:.2f} >= {target1:.2f} (+5%)")
+            # لا نغلق الإشارة — ننتظر T2
+
+        # LOSS: وصل لوقف الخسارة
         elif stop_loss > 0 and price <= stop_loss:
             row["status"]      = "loss"
+            row["result"]      = "loss"
             row["close_price"] = f"{price:.2f}"
             row["close_date"]  = str(today)
             updated += 1
-            print(f"  ❌ LOSS {row['stock_name']} ({row['symbol']}) — السعر {price:.2f} <= وقف {stop_loss:.2f}")
+            print(f"  ❌ LOSS {row['stock_name']} ({row['symbol']}) — {price:.2f} <= {stop_loss:.2f}")
 
-    # إضافة أعمدة جديدة إذا لم تكن موجودة
+    # تحديث الأعمدة
     new_fields = list(fieldnames or [])
-    for col in ["close_price", "close_date"]:
+    for col in ["close_price", "close_date", "result"]:
         if col not in new_fields:
             new_fields.append(col)
 
