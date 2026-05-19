@@ -8,31 +8,8 @@ API_URL  = os.environ.get("API_URL", "https://app.sahmk.sa/api/v1")
 HEADERS  = {"X-API-Key": API_KEY} if API_KEY else {}
 OUTPUT   = "data/market_intel.json"
 
-TASI_SYMBOLS = [
-    "1010","1020","1030","1050","1060","1080","1120","1150","1180","1210",
-    "1211","1212","1213","1214","1301","1302","1303","1304","1320","1321",
-    "2010","2020","2030","2040","2050","2060","2070","2080","2082","2083",
-    "2090","2100","2110","2120","2130","2140","2150","2160","2170","2180",
-    "2190","2200","2210","2220","2222","2223","2230","2240","2250","2290",
-    "2310","2320","2330","2340","2350","2360","2370","2380","2381","2382",
-    "4001","4002","4003","4004","4005","4006","4007","4008","4009","4010",
-    "4011","4012","4013","4014","4015","4016","4017","4018","4019","4020",
-    "4021","4030","4031","4040","4050","4051","4061","4100","4110","4130",
-    "4140","4141","4142","4143","4144","4150","4160","4161","4162","4163",
-    "4164","4170","4180","4190","4191","4192","4193","4200","4210","4220",
-    "4230","4240","4250","4261","4270","4280","4290","4291","4300",
-    "4310","4320","4321","4322","4323","4324","4330","4331","4332","4333",
-    "4334","4335","4336","4337","4338","4339","4340","4341","4342","4344",
-    "4345","4346","4347","4348","4349","5010","5020","5110","6001","6002",
-    "6010","6013","6014","6015","6020","6040","6050","6060","6070","7010",
-    "7020","7030","7040","7203","7204","8010","8020","8030","8040","8050",
-    "8060","8070","8100","8120","8150","8160","8170","8180","8190","8200",
-    "8210","8230","8240","8250","8260","8270","8280","8300","8310","8311",
-    "8320","8330","8340","9516","9526","9527","9528","9529","9536","9543",
-    "9544","9545","9546","9547","9548","9549","9553","9554","9555","9556",
-    "9557","9558","9559","9560","9561","9562","9563","9564","9565","9566",
-    "9567","9568",
-]
+# ✅ كاش 20 دقيقة — يمنع إعادة المسح في كل تشغيل
+CACHE_MINUTES = 20
 
 SECTORS = {
     "البنوك":         ["1010","1020","1030","1050","1060","1080","1120","1150"],
@@ -89,6 +66,24 @@ def get(endpoint, params=None):
     return None
 
 
+def is_cache_fresh():
+    """✅ تحقق من أن market_intel.json أحدث من CACHE_MINUTES دقيقة"""
+    try:
+        with open(OUTPUT, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        gen_at = data.get("generated_at", "")
+        if not gen_at:
+            return False, data
+        gen_time = datetime.strptime(gen_at, "%Y-%m-%d %H:%M")
+        age = (datetime.now() - gen_time).total_seconds() / 60
+        if age < CACHE_MINUTES:
+            print(f"  market_intel.json حديث ({age:.0f} دقيقة) — تخطي إعادة المسح ✅")
+            return True, data
+    except Exception:
+        pass
+    return False, {}
+
+
 def get_tasi_performance():
     data = get("/market/summary/", {"index": "TASI"})
     if not data:
@@ -109,12 +104,18 @@ def get_tasi_performance():
 
 
 def fetch_all_stocks():
+    """
+    ✅ إصلاح: يجلب فقط من gainers وvolume — بدون جلب 200 سهم فردي
+    طلبان فقط بدل 200+
+    """
     seen = {}
+
     for endpoint, key in [
         ("/market/gainers/", "gainers"),
         ("/market/volume/",  "stocks"),
+        ("/market/movers/",  "movers"),
     ]:
-        data = get(endpoint, {"limit": 50, "index": "TASI"})
+        data = get(endpoint, {"limit": 100, "index": "TASI"})
         if data:
             items = data if isinstance(data, list) else data.get(key, data.get("data", []))
             for s in items:
@@ -122,19 +123,7 @@ def fetch_all_stocks():
                 if sym and sym not in seen:
                     seen[sym] = s
 
-    print(f"  gainers+volume -> {len(seen)} سهم")
-
-    remaining = [sym for sym in TASI_SYMBOLS if sym not in seen]
-    print(f"  جلب {len(remaining)} سهم اضافي...")
-
-    for sym in remaining:
-        data = get(f"/quote/{sym}/")
-        if data:
-            s = data if isinstance(data, dict) else (data[0] if isinstance(data, list) and data else None)
-            if s and safe_float(s.get("price") or s.get("close")) > 0:
-                seen[sym] = s
-
-    print(f"  اجمالي: {len(seen)} سهم")
+    print(f"  gainers+volume+movers: {len(seen)} سهم (3 طلبات فقط) ✅")
     return list(seen.values())
 
 
@@ -230,12 +219,17 @@ def calc_canslim_score(stock, rs_rank, rs_vs_tasi, top_sectors):
 
 def run():
     print("\n" + "="*60)
-    print("Market Intelligence — جميع اسهم تاسي")
+    print("Market Intelligence — تاسي")
     print("="*60)
 
     if not API_KEY:
         print("API_KEY missing")
         return {}
+
+    # ✅ تحقق من الكاش أولاً
+    fresh, cached_data = is_cache_fresh()
+    if fresh:
+        return cached_data
 
     tasi_today, tasi_20d = get_tasi_performance()
     all_stocks = fetch_all_stocks()
@@ -253,10 +247,8 @@ def run():
     for stock in all_stocks:
         sym   = str(stock.get("symbol", ""))
         price = safe_float(stock.get("price") or stock.get("close"))
-
         if price <= 0:
             continue
-
         rs_comp, rs_vs = calc_rs_score(stock, tasi_20d)
         all_rs.append(rs_comp)
         stock_data_list.append({
@@ -281,6 +273,8 @@ def run():
             "name":       stock.get("name") or stock.get("name_ar") or sym,
             "price":      safe_float(stock.get("price") or stock.get("close")),
             "change_pct": safe_float(stock.get("change_percent") or stock.get("change_pct", 0)),
+            "volume":     safe_float(stock.get("volume", 0)),
+            "avg_volume": safe_float(stock.get("avg_volume", 0)),
             "rs_rank":    rs_rank,
             "rs_comp":    item["rs_comp"],
             "rs_vs_tasi": item["rs_vs"],
@@ -298,7 +292,7 @@ def run():
               f"{r['rs_rank']:>5} {r['canslim']:>8} {r['sector']}")
 
     output = {
-        "generated_at":  datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M"),
+        "generated_at":  datetime.now().strftime("%Y-%m-%d %H:%M"),
         "tasi_today":    tasi_today,
         "tasi_20d":      tasi_20d,
         "total_stocks":  len(results),
@@ -310,7 +304,7 @@ def run():
     with open(OUTPUT, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
-    print(f"\n  تم تحليل {len(results)} سهم")
+    print(f"\n  تم تحليل {len(results)} سهم | طلبات API: 3 فقط ✅")
     if results:
         print(f"  افضل سهم: {results[0]['name']} ({results[0]['symbol']})")
         print(f"  RS Rank: {results[0]['rs_rank']} | CAN SLIM: {results[0]['canslim']}")
