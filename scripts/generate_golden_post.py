@@ -51,6 +51,9 @@ entry   = data.get("entry",    "0")
 target1 = data.get("target1",  "0")
 target2 = data.get("target2",  "0")
 stop    = data.get("stop_loss","0")
+t2_pct  = data.get("target2_pct", 12.0)
+max_days= data.get("max_days", 10)
+accel   = data.get("acceleration", 0)
 
 pct_t1   = pct(entry, target1)
 pct_t2   = pct(entry, target2)
@@ -147,7 +150,7 @@ rows = [
     ("السعر الحالي:", data.get("price",""),  "",       WHITE,   "price"),
     ("نقطة الدخول:", entry,                  "",       GOLD_1,  "entry"),
     ("الهدف الاول:", target1,                pct_t1,   GREEN_G, "target"),
-    ("الهدف الثاني:",target2,                pct_t2,   GREEN_G, "target"),
+    (f"الهدف الثاني ({t2_pct:.0f}%):", target2, pct_t2, GREEN_G, "target"),
     ("وقف الخسارة:", stop,                   pct_stop, RED_G,   "stop"),
 ]
 
@@ -182,10 +185,19 @@ for i,(label,value,percent,color,kind) in enumerate(rows):
         pct_color = GREEN_G if "+" in percent else RED_G
         draw.text((PCT_COL,yc),percent,fill=pct_color,font=FB(27),anchor="mm",direction="ltr")
 
-metrics_y=y0+len(rows)*RH+10
-rsi=data.get("rsi","50"); vol=data.get("volume_accum","2.5"); score=data.get("score","80")
+# مؤشر الإطار الزمني
+time_y = y0 + len(rows)*RH + 5
+draw.rounded_rectangle((MX,time_y,W-MX,time_y+45),radius=14,
+                       fill=(8,18,34),outline=GOLD_2,width=2)
+time_text = f"الإطار الزمني: أسبوع — أقصاه {max_days} أيام"
+if accel >= 30:
+    time_text += f"  |  🚀 تسارع {accel}/50"
+tc(draw,W//2,time_y+22,time_text,FR(20),GOLD_2)
+
+metrics_y = time_y + 55
+rsi=data.get("rsi","50"); score=data.get("score","80"); rr=data.get("rr","2.5")
 draw.rounded_rectangle((MX,metrics_y,W-MX,metrics_y+50),radius=16,fill=(8,16,30),outline=GOLD_3,width=1)
-for j,(txt,col) in enumerate([(f"RSI  {rsi}",GOLD_2),(f"Vol  {vol}x",GREEN_G),(f"Score  {score}",WHITE)]):
+for j,(txt,col) in enumerate([(f"RSI  {rsi}",GOLD_2),(f"R:R  {rr}",GREEN_G),(f"Score  {score}",WHITE)]):
     mx2=MX+140+j*284
     draw.text((mx2,metrics_y+25),txt,fill=col,font=FB(22),anchor="mm",direction="ltr")
     if j<2:
