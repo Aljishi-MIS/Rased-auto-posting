@@ -9,7 +9,7 @@ OUTPUT_FILE  = "data/daily.json"
 GOLDEN_FILE  = "data/golden_signal.json"
 INTEL_FILE   = "data/market_intel.json"
 
-GOLDEN_SCORE_MIN     = 72
+GOLDEN_SCORE_MIN     = 50
 MIN_HISTORY_DAYS     = 15
 GOLDEN_EARLIEST_HOUR = 9
 GOLDEN_LATEST_HOUR   = 15
@@ -104,7 +104,7 @@ def calc_rsi(closes, p=14):
 
 def score_rsi(closes):
     r=calc_rsi(closes)
-    if 45<=r<=60:  return 15,r,f"RSI {r:.0f} المنطقة الذهبية للانفجار"
+    if 45<=r<=60:  return 15,r,f"RSI {r:.0f} المنطقة الذهبية"
     elif 60<r<=70: return 10,r,f"RSI {r:.0f} قوي"
     elif 35<=r<45: return 8, r,f"RSI {r:.0f} تراجع صحي"
     elif r>75:     return -5,r,f"RSI {r:.0f} تشبع شرائي"
@@ -181,11 +181,11 @@ def score_macd(closes):
         ms3=[calc_ema(closes[:-3][:i],12)-calc_ema(closes[:-3][:i],26) for i in range(26,len(closes)-2)]
         s3=calc_ema(ms3,9) if len(ms3)>=9 else m3
         cross=m3<s3 and macd>sig
-    if cross:                 return 15,round(hist,4),f"تقاطع صعودي حديث MACD {macd:.3f}"
+    if cross:             return 15,round(hist,4),f"تقاطع صعودي حديث MACD {macd:.3f}"
     elif macd>sig and hist>0: return 12,round(hist,4),"MACD صاعد + Histogram يتوسع"
-    elif macd>sig:            return 8, round(hist,4),"MACD فوق Signal"
+    elif macd>sig:        return 8, round(hist,4),f"MACD فوق Signal"
     elif macd<sig and hist>-0.01: return 3,round(hist,4),"MACD يقترب من التقاطع"
-    else:                     return 0, round(hist,4),"MACD تحت Signal"
+    else:                 return 0, round(hist,4),"MACD تحت Signal"
 
 
 # ══════════════════════════════════════════════════
@@ -370,13 +370,13 @@ def main():
     b=golden[0]
     sig=build_signal(b["stock"],b["hist"],b["score"],b["components"],
                      b["signals"],b["rv"],b["vr"])
-    if sig["rr"]<1.0: print(f"  R:R {sig['rr']} ضعيف"); sys.exit(1)
+    if sig["rr"]<0.8: print(f"  R:R {sig['rr']} ضعيف جداً"); sys.exit(1)
     for fn in [GOLDEN_FILE, OUTPUT_FILE]:
         with open(fn,"w",encoding="utf-8") as f: json.dump(sig,f,ensure_ascii=False,indent=2)
     print(f"\n  الإشارة الذهبية:")
     print(f"  {sig['stock_name']} ({sig['symbol']}) — {sig['signal_type']} — {sig['score']}/100")
     print(f"  دخول: {sig['entry']} | هدف1: {sig['target1']} | وقف: {sig['stop_loss']} | R:R: {sig['rr']}")
-    print(f"\n  المكونات (من 100):")
+    print(f"\n  المكونات:")
     labels={"rsi_momentum":"RSI Momentum","bollinger_squeeze":"Bollinger Squeeze",
             "obv_divergence":"OBV Divergence","macd_crossover":"MACD Crossover",
             "volume_surge":"Volume Surge","canslim":"CANSLIM"}
