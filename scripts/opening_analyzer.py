@@ -217,15 +217,14 @@ def analyze_opening_momentum(opening_data):
 
 def build_signal(best, opening_data):
     price     = best["last_price"]
-    high      = best.get("high", price)
-    low       = best.get("low",  price)
     entry     = round(price * 1.001, 2)
-    target1   = round(entry * 1.03, 2)
-    target2   = round(entry * 1.06, 2)
-    stop_loss = round(max(low * 0.99, entry * 0.97), 2)
+    # ✅ T1=+5%, T2=+10% متوافق مع النظام الجديد
+    target1   = round(entry * 1.05, 2)
+    target2   = round(entry * 1.10, 2)
+    stop_loss = round(max(best.get("low", entry * 0.97) * 0.99, entry * 0.96), 2)
     risk      = entry - stop_loss
-    reward    = target1 - entry
-    rr        = round(reward / risk, 2) if risk > 0 else 0
+    # R:R على T2
+    rr        = round((target2 - entry) / risk, 2) if risk > 0 else 0
 
     score    = best["opening_score"]
     momentum = (
@@ -242,23 +241,27 @@ def build_signal(best, opening_data):
     )
 
     return {
-        "brand":        "مضارب",
-        "mode":         "opening",
-        "stock_name":   best["name"],
-        "symbol":       best["symbol"],
-        "price":        f"{price:.2f}",
-        "entry":        f"{entry:.2f}",
-        "target1":      f"{target1:.2f}",
-        "target2":      f"{target2:.2f}",
-        "stop_loss":    f"{stop_loss:.2f}",
-        "momentum":     momentum,
-        "score":        score,
-        "rsi":          50,
-        "rr":           rr,
-        "volume_ratio": best["vol_acceleration"],
-        "source":       "opening_analyzer",
-        "generated_at": now.strftime("%Y-%m-%d %H:%M"),
-        "note":         note,
+        "brand":          "مضارب",
+        "mode":           "opening",
+        "stock_name":     best["name"],
+        "symbol":         best["symbol"],
+        "price":          f"{price:.2f}",
+        "entry":          f"{entry:.2f}",
+        "target1":        f"{target1:.2f}",
+        "target2":        f"{target2:.2f}",
+        "stop_loss":      f"{stop_loss:.2f}",
+        "momentum":       momentum,
+        "score":          score,
+        "rsi":            50,
+        "rr":             rr,
+        "volume_ratio":   best["vol_acceleration"],
+        "target2_pct":    10.0,
+        "expected_days":  3,
+        "max_days":       5,
+        "acceleration":   int(best["vol_acceleration"] * 20),
+        "source":         "opening_analyzer",
+        "generated_at":   now.strftime("%Y-%m-%d %H:%M"),
+        "note":           note,
     }
 
 
@@ -319,7 +322,7 @@ def main():
         print(f"\n  الاشارة الافتتاحية:")
         print(f"  السهم  : {signal['stock_name']} ({signal['symbol']})")
         print(f"  السعر  : {signal['price']} | دخول: {signal['entry']}")
-        print(f"  هدف1   : {signal['target1']} | هدف2: {signal['target2']}")
+        print(f"  هدف1(+5%): {signal['target1']} | هدف2(+10%): {signal['target2']}")
         print(f"  وقف    : {signal['stop_loss']} | R:R: {signal['rr']}")
         print(f"  Score  : {signal['score']}")
     else:
