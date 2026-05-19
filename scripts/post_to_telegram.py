@@ -41,6 +41,10 @@ claude_warning = data.get("claude_warning",    "")
 claude_conf    = data.get("claude_confidence", "")
 news_sentiment = data.get("news_sentiment",    "neutral")
 news_summary   = data.get("news_summary",      "")
+target2_pct    = data.get("target2_pct",       10.0)
+expected_days  = data.get("expected_days",     7)
+max_days       = data.get("max_days",          10)
+acceleration   = data.get("acceleration",      0)
 
 pct_entry = pct(price,  entry)
 pct_t1    = pct(entry,  target1)
@@ -63,6 +67,13 @@ if claude_conf:
     conf_emoji = "🟢" if claude_conf == "عالية" else "🟡" if claude_conf == "متوسطة" else "🔴"
     claude_section += f"\n{conf_emoji} *الثقة:* {claude_conf}"
 
+# قسم التسارع
+accel_section = ""
+if acceleration >= 30:
+    accel_section = f"\n🚀 *تسارع قوي* — زخم {acceleration}/50"
+elif acceleration >= 15:
+    accel_section = f"\n📊 *تسارع متوسط* — {acceleration}/50"
+
 caption = f"""
 *اشارة اليوم — مضارب*
 
@@ -77,12 +88,12 @@ caption = f"""
 
 🔴 وقف الخسارة: *{stop_loss} ريال* {pct_stop}
 
+⏱ الإطار الزمني: *{expected_days}-{max_days} أيام* (هدف {target2_pct:.0f}%)
 ⚡ الزخم: *{momentum}*
 📈 RS Rank: *{rs_rank}*
 🔢 Score: *{score}*
 
-📌 {note}
-{news_section}{claude_section}
+📌 {note}{accel_section}{news_section}{claude_section}
 
 🕐 {generated}
 
