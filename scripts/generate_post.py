@@ -1,6 +1,6 @@
 """
-generate_post.py  ─ مُحدَّث
-============================
+generate_post.py
+================
 صورة تلغرام مع الأهداف المحدَّثة:
   هدف أول +5%  |  هدف ثانٍ +10% (ذهبية +12%)  |  وقف -4%  |  7-10 أيام
 """
@@ -62,15 +62,33 @@ def generate_image(data, output_path, is_golden=False):
     draw.text((W//2, 230), data.get("stock_name",""),  font=load_font(24),      fill=WHITE,  anchor="mm")
     draw.text((W//2, 275), tag,                        font=load_font(20),      fill=LGRAY,  anchor="mm")
 
+    # حساب نسب الأهداف
+    entry     = float(data.get("entry",    0) or 0)
+    target1   = float(data.get("target1",  0) or 0)
+    target2   = float(data.get("target2",  0) or 0)
+    stop_loss = float(data.get("stop_loss",0) or 0)
+    t2_pct    = data.get("target2_pct", 10.0)
+    max_days  = data.get("max_days", 10)
+
+    def p(val):
+        if entry > 0 and val > 0:
+            return f"+{((val-entry)/entry*100):.1f}%"
+        return ""
+
+    def ps(val):
+        if entry > 0 and val > 0:
+            return f"-{((entry-val)/entry*100):.1f}%"
+        return ""
+
     # صفوف البيانات
     rows = [
-        ("نقطة الدخول",   f"{data.get('entry',0)} ريال",                               WHITE),
-        ("الهدف الأول",   f"{data.get('target1',0)} ريال  (+{data.get('target1_pct',0)}%)", GREEN),
-        ("الهدف الثاني",  f"{data.get('target2',0)} ريال  (+{data.get('target2_pct',0)}%)", GREEN),
-        ("وقف الخسارة",   f"{data.get('stop_loss',0)} ريال  (-{data.get('stop_loss_pct',0)}%)", RED),
-        ("الإطار الزمني", f"أسبوع — أقصاه {data.get('max_days',10)} أيام",             BLUE),
-        ("مكافأة/مخاطرة", f"{data.get('rr',0)}:1",                                     GOLD),
-        ("قوة الإشارة",   f"{data.get('score',0)}/100",                                accent),
+        ("نقطة الدخول",   f"{entry:.2f} ريال",                                    WHITE),
+        ("الهدف الأول",   f"{target1:.2f} ريال  ({p(target1)})",                  GREEN),
+        ("الهدف الثاني",  f"{target2:.2f} ريال  (+{t2_pct:.0f}%)",               GREEN),
+        ("وقف الخسارة",   f"{stop_loss:.2f} ريال  ({ps(stop_loss)})",             RED),
+        ("الإطار الزمني", f"أسبوع — أقصاه {max_days} أيام",                       BLUE),
+        ("مكافأة/مخاطرة", f"{data.get('rr',0)}:1",                                GOLD),
+        ("قوة الإشارة",   f"{data.get('score',0)}/100",                           accent),
     ]
 
     y_row = 330
@@ -85,12 +103,13 @@ def generate_image(data, output_path, is_golden=False):
     y_tech = y_row + 10
     draw.rounded_rectangle([30,y_tech,W-30,y_tech+80], radius=14,
                            fill=BG_CARD, outline=accent, width=1)
-    reasons     = data.get("reasons", [])
-    reason_text = "  ·  ".join(reasons[:3]) if reasons else ""
-    draw.text((W//2, y_tech+22), f"RSI: {data.get('rsi',0)}",
+    accel       = data.get("acceleration", 0)
+    accel_text  = f"تسارع: {accel}/50" if accel > 0 else ""
+    draw.text((W//2, y_tech+22), f"RSI: {data.get('rsi',0)}  |  {accel_text}",
               font=load_font(17), fill=LGRAY, anchor="mm")
-    draw.text((W//2, y_tech+55), reason_text,
-              font=load_font(17), fill=LGRAY, anchor="mm")
+    note_text = data.get("note", "")[:60]
+    draw.text((W//2, y_tech+55), note_text,
+              font=load_font(15), fill=LGRAY, anchor="mm")
 
     # تذييل
     draw.text((W//2, H-60), datetime.now().strftime("%Y-%m-%d  %H:%M"),
@@ -107,7 +126,11 @@ def main():
 
     if os.path.exists(DAILY_FILE):
         with open(DAILY_FILE, encoding="utf-8") as f: daily = json.load(f)
-        generate_image(daily, OUTPUT_IMG, is_golden=daily.get("is_golden", False))
+        is_golden = daily.get("type", "") == "اشارة ذهبية"
+        generate_image(daily, OUTPUT_IMG, is_golden=is_golden)
+        # نسخ للـ output.png المستخدم في النشر
+        import shutil
+        shutil.copy(OUTPUT_IMG, "output.png")
     else:
         print("  ❌ daily.json غير موجود")
 
