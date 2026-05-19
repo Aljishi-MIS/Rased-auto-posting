@@ -1,1 +1,546 @@
- 
+ <!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مضارب — سجل الأداء</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #070B14;
+    --surface:  #0D1526;
+    --card:     #111D35;
+    --border:   #1E2F50;
+    --gold:     #F0B429;
+    --gold2:    #FFD700;
+    --green:    #00E676;
+    --red:      #FF3D5A;
+    --blue:     #2979FF;
+    --text:     #E8EDF8;
+    --muted:    #6B7FA8;
+    --win-bg:   rgba(0,230,118,.08);
+    --loss-bg:  rgba(255,61,90,.08);
+    --open-bg:  rgba(41,121,255,.08);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans Arabic',sans-serif;
+    min-height:100vh;
+    overflow-x:hidden;
+  }
+
+  /* ── خلفية نجمية ── */
+  body::before{
+    content:'';position:fixed;inset:0;
+    background:
+      radial-gradient(ellipse 60% 40% at 20% 20%, rgba(240,180,41,.06) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 50% at 80% 80%, rgba(41,121,255,.05) 0%, transparent 60%);
+    pointer-events:none;z-index:0;
+  }
+
+  .wrap{max-width:960px;margin:0 auto;padding:24px 16px;position:relative;z-index:1}
+
+  /* ── الرأس ── */
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:20px 28px;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:20px;
+    margin-bottom:24px;
+  }
+  .logo{display:flex;align-items:center;gap:12px}
+  .logo-icon{
+    width:44px;height:44px;border-radius:12px;
+    background:linear-gradient(135deg,var(--gold),#C8900A);
+    display:flex;align-items:center;justify-content:center;
+    font-size:22px;font-weight:700;color:#000;
+  }
+  .logo-text h1{font-size:20px;font-weight:700;color:var(--gold)}
+  .logo-text p{font-size:12px;color:var(--muted);margin-top:2px}
+  .live-badge{
+    display:flex;align-items:center;gap:6px;
+    background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.3);
+    padding:6px 14px;border-radius:100px;font-size:12px;color:var(--green);
+  }
+  .live-dot{
+    width:7px;height:7px;border-radius:50%;background:var(--green);
+    animation:pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+
+  /* ── بطاقات الإحصاء ── */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+  @media(max-width:600px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{
+    background:var(--card);border:1px solid var(--border);
+    border-radius:16px;padding:18px 16px;
+    transition:border-color .2s;position:relative;overflow:hidden;
+  }
+  .stat::before{
+    content:'';position:absolute;top:0;right:0;
+    width:60px;height:60px;border-radius:0 16px 0 60px;
+    opacity:.07;
+  }
+  .stat.win::before{background:var(--green)}
+  .stat.loss::before{background:var(--red)}
+  .stat.total::before{background:var(--gold)}
+  .stat.rr::before{background:var(--blue)}
+  .stat:hover{border-color:var(--gold);transform:translateY(-2px)}
+  .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+  .stat-value{font-size:28px;font-weight:700;font-family:'JetBrains Mono',monospace}
+  .stat-sub{font-size:11px;color:var(--muted);margin-top:4px}
+  .stat.win .stat-value{color:var(--green)}
+  .stat.loss .stat-value{color:var(--red)}
+  .stat.total .stat-value{color:var(--gold)}
+  .stat.rr .stat-value{color:var(--blue)}
+
+  /* ── شريط Win Rate ── */
+  .winrate-bar-wrap{
+    background:var(--card);border:1px solid var(--border);
+    border-radius:16px;padding:20px 24px;margin-bottom:24px;
+  }
+  .winrate-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .winrate-title{font-size:14px;font-weight:600;color:var(--text)}
+  .winrate-pct{font-size:22px;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--gold)}
+  .bar-track{
+    height:10px;background:var(--border);border-radius:100px;overflow:hidden;
+  }
+  .bar-fill{
+    height:100%;border-radius:100px;
+    background:linear-gradient(90deg,var(--green),var(--gold));
+    transition:width 1.2s cubic-bezier(.4,0,.2,1);width:0;
+  }
+  .bar-legend{display:flex;gap:16px;margin-top:10px;font-size:12px;color:var(--muted)}
+  .bar-legend span{display:flex;align-items:center;gap:5px}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+  /* ── أداء حسب القطاع ── */
+  .sectors-wrap{
+    background:var(--card);border:1px solid var(--border);
+    border-radius:16px;padding:20px 24px;margin-bottom:24px;
+  }
+  .section-title{
+    font-size:14px;font-weight:600;margin-bottom:16px;
+    display:flex;align-items:center;gap:8px;
+  }
+  .section-title::before{
+    content:'';width:3px;height:16px;border-radius:2px;
+    background:var(--gold);flex-shrink:0;
+  }
+  .sector-row{
+    display:flex;align-items:center;gap:12px;margin-bottom:10px;
+  }
+  .sector-name{width:110px;font-size:13px;color:var(--muted);flex-shrink:0}
+  .sector-bar-wrap{flex:1;height:8px;background:var(--border);border-radius:100px;overflow:hidden}
+  .sector-bar{height:100%;border-radius:100px;background:var(--gold);transition:width 1s ease}
+  .sector-val{font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text);width:50px;text-align:left;flex-shrink:0}
+
+  /* ── جدول الإشارات ── */
+  .table-wrap{
+    background:var(--card);border:1px solid var(--border);
+    border-radius:16px;overflow:hidden;margin-bottom:24px;
+  }
+  .table-header{
+    padding:18px 24px;
+    border-bottom:1px solid var(--border);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .filter-tabs{display:flex;gap:6px}
+  .tab{
+    padding:6px 14px;border-radius:100px;font-size:12px;cursor:pointer;
+    border:1px solid var(--border);color:var(--muted);background:transparent;
+    transition:.2s;font-family:'IBM Plex Sans Arabic',sans-serif;
+  }
+  .tab.active{background:var(--gold);border-color:var(--gold);color:#000;font-weight:600}
+  .tab:hover:not(.active){border-color:var(--gold);color:var(--gold)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{
+    padding:12px 16px;text-align:right;
+    color:var(--muted);font-weight:500;font-size:11px;
+    letter-spacing:.5px;text-transform:uppercase;
+    border-bottom:1px solid var(--border);background:var(--surface);
+  }
+  td{padding:13px 16px;border-bottom:1px solid rgba(30,47,80,.5);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:rgba(240,180,41,.03)}
+
+  .badge{
+    display:inline-flex;align-items:center;gap:4px;
+    padding:3px 10px;border-radius:100px;font-size:11px;font-weight:600;
+  }
+  .badge.win{background:var(--win-bg);color:var(--green);border:1px solid rgba(0,230,118,.2)}
+  .badge.loss{background:var(--loss-bg);color:var(--red);border:1px solid rgba(255,61,90,.2)}
+  .badge.open{background:var(--open-bg);color:var(--blue);border:1px solid rgba(41,121,255,.2)}
+  .badge.expired{background:rgba(107,127,168,.08);color:var(--muted);border:1px solid rgba(107,127,168,.2)}
+  .badge.golden{background:rgba(240,180,41,.1);color:var(--gold);border:1px solid rgba(240,180,41,.3)}
+
+  .return-pos{color:var(--green);font-family:'JetBrains Mono',monospace;font-size:12px}
+  .return-neg{color:var(--red);font-family:'JetBrains Mono',monospace;font-size:12px}
+  .return-neu{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:12px}
+
+  .mono{font-family:'JetBrains Mono',monospace;font-size:12px}
+
+  /* ── Empty state ── */
+  .empty{
+    padding:60px 24px;text-align:center;
+  }
+  .empty-icon{font-size:48px;margin-bottom:12px;opacity:.4}
+  .empty-title{font-size:16px;color:var(--muted);margin-bottom:6px}
+  .empty-sub{font-size:13px;color:var(--border)}
+
+  /* ── Footer ── */
+  footer{
+    text-align:center;padding:20px;
+    font-size:12px;color:var(--muted);
+    border-top:1px solid var(--border);
+  }
+
+  /* ── Loading ── */
+  .loading{
+    display:flex;flex-direction:column;align-items:center;
+    justify-content:center;min-height:200px;gap:12px;
+  }
+  .spinner{
+    width:32px;height:32px;border:3px solid var(--border);
+    border-top-color:var(--gold);border-radius:50%;
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ── Responsive table ── */
+  @media(max-width:600px){
+    th:nth-child(4),td:nth-child(4),
+    th:nth-child(6),td:nth-child(6){display:none}
+    .stat-value{font-size:22px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- الرأس -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">م</div>
+      <div class="logo-text">
+        <h1>مضارب | سجل الأداء</h1>
+        <p>TASI AI — إشارات ذكية للسوق السعودي</p>
+      </div>
+    </div>
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      <span>محدَّث تلقائياً</span>
+    </div>
+  </header>
+
+  <!-- إحصاء -->
+  <div class="stats" id="stats">
+    <div class="stat total">
+      <div class="stat-label">إجمالي الإشارات</div>
+      <div class="stat-value" id="totalCount">—</div>
+      <div class="stat-sub" id="totalPeriod">منذ البداية</div>
+    </div>
+    <div class="stat win">
+      <div class="stat-label">Win Rate</div>
+      <div class="stat-value" id="winRate">—</div>
+      <div class="stat-sub" id="winCount">— ربح / — خسارة</div>
+    </div>
+    <div class="stat rr">
+      <div class="stat-label">متوسط العائد</div>
+      <div class="stat-value" id="avgReturn">—</div>
+      <div class="stat-sub">على الإشارات المغلقة</div>
+    </div>
+    <div class="stat total">
+      <div class="stat-label">مفتوحة حالياً</div>
+      <div class="stat-value" id="openCount" style="color:var(--blue)">—</div>
+      <div class="stat-sub">في انتظار النتيجة</div>
+    </div>
+  </div>
+
+  <!-- Win Rate Bar -->
+  <div class="winrate-bar-wrap">
+    <div class="winrate-header">
+      <span class="winrate-title">توزيع النتائج</span>
+      <span class="winrate-pct" id="winRatePct">—%</span>
+    </div>
+    <div class="bar-track">
+      <div class="bar-fill" id="winBar"></div>
+    </div>
+    <div class="bar-legend">
+      <span><div class="dot" style="background:var(--green)"></div>ربح (T1 أو T2)</span>
+      <span><div class="dot" style="background:var(--red)"></div>خسارة</span>
+      <span><div class="dot" style="background:var(--blue)"></div>مفتوحة</span>
+      <span><div class="dot" style="background:var(--muted)"></div>منتهية بلا نتيجة</span>
+    </div>
+  </div>
+
+  <!-- أداء القطاعات -->
+  <div class="sectors-wrap" id="sectorsWrap" style="display:none">
+    <div class="section-title">أداء القطاعات</div>
+    <div id="sectorsList"></div>
+  </div>
+
+  <!-- جدول الإشارات -->
+  <div class="table-wrap">
+    <div class="table-header">
+      <div class="section-title" style="margin-bottom:0">سجل الإشارات</div>
+      <div class="filter-tabs">
+        <button class="tab active" onclick="filterTable('all')">الكل</button>
+        <button class="tab" onclick="filterTable('win')">✅ ربح</button>
+        <button class="tab" onclick="filterTable('loss')">❌ خسارة</button>
+        <button class="tab" onclick="filterTable('open')">🔵 مفتوحة</button>
+      </div>
+    </div>
+    <div id="tableContainer">
+      <div class="loading">
+        <div class="spinner"></div>
+        <span style="color:var(--muted);font-size:13px">جارٍ تحميل السجل…</span>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>📌 محتوى تعليمي وتحليلي فقط — لا يُعدّ توصية استثمارية</p>
+    <p style="margin-top:6px;opacity:.5">آخر تحديث: <span id="lastUpdate">—</span></p>
+  </footer>
+</div>
+
+<script>
+// ─── مصدر البيانات من GitHub Raw ───────────────────────────────────────────
+const REPO    = "Aljishi/modareb-auto-posting";
+const BRANCH  = "main";
+const CSV_URL = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/data/signals_log.csv`;
+
+let allSignals  = [];
+let currentFilter = "all";
+
+// ─── تحميل وتحليل CSV ──────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const res  = await fetch(CSV_URL + "?t=" + Date.now());
+    if (!res.ok) throw new Error("CSV not found");
+    const text = await res.text();
+    allSignals = parseCSV(text);
+    render();
+  } catch (e) {
+    document.getElementById("tableContainer").innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">📊</div>
+        <div class="empty-title">لا توجد بيانات بعد</div>
+        <div class="empty-sub">سيظهر السجل هنا بعد أول إشارة ناجحة</div>
+      </div>`;
+    ["totalCount","winRate","avgReturn","openCount","winRatePct"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = "—";
+    });
+  }
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split("\n");
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map(h => h.trim().replace(/^\uFEFF/, ""));
+  return lines.slice(1).map(line => {
+    const vals = line.split(",");
+    const obj  = {};
+    headers.forEach((h, i) => { obj[h] = (vals[i] || "").trim(); });
+    return obj;
+  }).filter(r => r.symbol);
+}
+
+// ─── حساب الإحصائيات ─────────────────────────────────────────────────────
+function calcStats(signals) {
+  const closed  = signals.filter(s => ["win","win_t1","win_t2","loss"].includes(s.status));
+  const wins    = signals.filter(s => ["win","win_t1","win_t2"].includes(s.status));
+  const losses  = signals.filter(s => s.status === "loss");
+  const open    = signals.filter(s => s.status === "open");
+  const expired = signals.filter(s => s.status === "expired");
+
+  const winRate = closed.length > 0 ? Math.round(wins.length / closed.length * 100) : 0;
+
+  // متوسط العائد
+  let returns = [];
+  wins.forEach(s => {
+    const entry  = parseFloat(s.entry  || 0);
+    const t2     = parseFloat(s.target2 || 0);
+    if (entry > 0 && t2 > 0) returns.push((t2 - entry) / entry * 100);
+  });
+  losses.forEach(s => {
+    const entry = parseFloat(s.entry    || 0);
+    const sl    = parseFloat(s.stop_loss || 0);
+    if (entry > 0 && sl > 0) returns.push((sl - entry) / entry * 100);
+  });
+  const avgReturn = returns.length > 0
+    ? (returns.reduce((a,b)=>a+b,0) / returns.length).toFixed(1)
+    : null;
+
+  return { total: signals.length, wins: wins.length, losses: losses.length,
+           open: open.length, expired: expired.length, winRate, closed: closed.length,
+           avgReturn };
+}
+
+// ─── أداء القطاعات ──────────────────────────────────────────────────────────
+function calcSectors(signals) {
+  const sectorMap = {};
+  signals.filter(s => ["win","win_t1","win_t2","loss"].includes(s.status)).forEach(s => {
+    const sec = s.sector || "أخرى";
+    if (!sectorMap[sec]) sectorMap[sec] = {wins:0, total:0};
+    sectorMap[sec].total++;
+    if (["win","win_t1","win_t2"].includes(s.status)) sectorMap[sec].wins++;
+  });
+  return Object.entries(sectorMap)
+    .map(([name,d]) => ({name, winRate: Math.round(d.wins/d.total*100), total: d.total}))
+    .filter(s => s.total >= 2)
+    .sort((a,b) => b.winRate - a.winRate);
+}
+
+// ─── عرض البيانات ────────────────────────────────────────────────────────────
+function render() {
+  const stats = calcStats(allSignals);
+
+  // الإحصائيات
+  document.getElementById("totalCount").textContent = stats.total;
+  document.getElementById("winRate").textContent    = stats.closed > 0 ? stats.winRate + "%" : "—";
+  document.getElementById("avgReturn").textContent  = stats.avgReturn !== null ? (stats.avgReturn > 0 ? "+" : "") + stats.avgReturn + "%" : "—";
+  document.getElementById("openCount").textContent  = stats.open;
+  document.getElementById("winCount").textContent   = `${stats.wins} ربح / ${stats.losses} خسارة`;
+  document.getElementById("winRatePct").textContent = stats.closed > 0 ? stats.winRate + "%" : "—%";
+  document.getElementById("lastUpdate").textContent = new Date().toLocaleString("ar-SA");
+
+  // شريط Win Rate
+  setTimeout(() => {
+    document.getElementById("winBar").style.width = (stats.closed > 0 ? stats.winRate : 0) + "%";
+  }, 300);
+
+  // القطاعات
+  const sectors = calcSectors(allSignals);
+  if (sectors.length > 0) {
+    document.getElementById("sectorsWrap").style.display = "block";
+    const maxWR = Math.max(...sectors.map(s => s.winRate));
+    document.getElementById("sectorsList").innerHTML = sectors.map(s => `
+      <div class="sector-row">
+        <div class="sector-name">${s.name}</div>
+        <div class="sector-bar-wrap">
+          <div class="sector-bar" style="width:${Math.round(s.winRate/maxWR*100)}%"></div>
+        </div>
+        <div class="sector-val">${s.winRate}%</div>
+        <div style="font-size:11px;color:var(--muted)">(${s.total})</div>
+      </div>`).join("");
+  }
+
+  renderTable(currentFilter);
+}
+
+function filterTable(f) {
+  currentFilter = f;
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  event.target.classList.add("active");
+  renderTable(f);
+}
+
+function renderTable(filter) {
+  let data = [...allSignals].reverse();
+  if (filter !== "all") {
+    if (filter === "win")  data = data.filter(s => ["win","win_t1","win_t2"].includes(s.status));
+    if (filter === "loss") data = data.filter(s => s.status === "loss");
+    if (filter === "open") data = data.filter(s => s.status === "open");
+  }
+
+  if (data.length === 0) {
+    document.getElementById("tableContainer").innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">لا توجد إشارات</div>
+        <div class="empty-sub">لا يوجد سجل يطابق هذا الفلتر</div>
+      </div>`;
+    return;
+  }
+
+  const rows = data.map(s => {
+    const statusBadge = getStatusBadge(s.status);
+    const typeBadge   = s.signal_type === "اشارة ذهبية"
+      ? `<span class="badge golden">⭐ ذهبية</span>` : "";
+    const retPct = calcReturn(s);
+    const retClass = retPct === null ? "return-neu"
+      : parseFloat(retPct) > 0 ? "return-pos" : "return-neg";
+    const retText = retPct === null ? "—" : (parseFloat(retPct) > 0 ? "+" : "") + retPct + "%";
+    const score = s.score ? `<span class="mono">${s.score}</span>` : "—";
+    return `
+    <tr>
+      <td>
+        <div style="font-weight:600;font-size:14px">${s.stock_name || s.symbol}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${s.symbol} · ${s.sector || ""}</div>
+        <div style="margin-top:4px">${typeBadge}</div>
+      </td>
+      <td><span class="mono">${s.entry || "—"}</span></td>
+      <td>
+        <div style="font-size:11px;color:var(--muted)">H: <span class="mono" style="color:var(--green)">${s.target2 || "—"}</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">L: <span class="mono" style="color:var(--red)">${s.stop_loss || "—"}</span></div>
+      </td>
+      <td><span class="${retClass}">${retText}</span></td>
+      <td>${statusBadge}</td>
+      <td><span class="mono" style="color:var(--muted);font-size:11px">${s.date || "—"}</span></td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("tableContainer").innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>السهم</th>
+          <th>الدخول</th>
+          <th>الأهداف</th>
+          <th>العائد</th>
+          <th>النتيجة</th>
+          <th>التاريخ</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function calcReturn(s) {
+  const entry = parseFloat(s.entry || 0);
+  if (!entry) return null;
+
+  if (["win","win_t2"].includes(s.status)) {
+    const t2 = parseFloat(s.target2 || 0);
+    if (t2 > 0) return ((t2 - entry) / entry * 100).toFixed(1);
+  }
+  if (s.status === "win_t1") {
+    const t1 = parseFloat(s.target1 || 0);
+    if (t1 > 0) return ((t1 - entry) / entry * 100).toFixed(1);
+  }
+  if (s.status === "loss") {
+    const sl = parseFloat(s.stop_loss || 0);
+    if (sl > 0) return ((sl - entry) / entry * 100).toFixed(1);
+  }
+  if (s.close_price) {
+    const cp = parseFloat(s.close_price);
+    if (cp > 0) return ((cp - entry) / entry * 100).toFixed(1);
+  }
+  return null;
+}
+
+function getStatusBadge(status) {
+  const map = {
+    win:     '<span class="badge win">✅ ربح T2</span>',
+    win_t2:  '<span class="badge win">✅ ربح T2</span>',
+    win_t1:  '<span class="badge win" style="color:#80FF80">🎯 ربح T1</span>',
+    loss:    '<span class="badge loss">❌ خسارة</span>',
+    open:    '<span class="badge open">🔵 مفتوحة</span>',
+    expired: '<span class="badge expired">⏰ منتهية</span>',
+  };
+  return map[status] || `<span class="badge expired">${status || "—"}</span>`;
+}
+
+// ─── تشغيل ──────────────────────────────────────────────────────────────────
+loadData();
+// تحديث كل 5 دقائق
+setInterval(loadData, 5 * 60 * 1000);
+</script>
+</body>
+</html>
