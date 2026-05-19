@@ -1,204 +1,215 @@
-name: TASI AI — مضارب | Auto Post
+name: TASI AI — مضارب
 
 on:
-  schedule:
-    - cron: '0 7 * * 0-4'    # 10:00 صباحاً توقيت الرياض
-    - cron: '0 9 * * 0-4'    # 12:00 ظهراً
-    - cron: '0 11 * * 0-4'   # 02:00 عصراً
   workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 5 * * 0-4"
+    - cron: "0 6 * * 0-4"
+    - cron: "*/5 7-12 * * 0-4"
+    - cron: "0 12 * * 0-4"
+    - cron: "30 12 * * 4"
 
 jobs:
-  post:
+
+  auto-post:
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'schedule' &&
+       github.event.schedule != '30 12 * * 4')
 
     steps:
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install Dependencies
-        run: |
-          pip install --upgrade pip
-          pip install requests anthropic pillow
+      - name: Install Requirements
+        run: pip install -r requirements.txt
+        continue-on-error: true
 
-      - name: Create Data Directory
-        run: mkdir -p data
-
-      # ── الخطوة 1: تحليل أسهم تاسي واختيار Top 3 ──────────────
-      - name: Analyze TASI Stocks
+      - name: Golden Signal Analysis
         env:
-          API_KEY: ${{ secrets.API_KEY }}
-          API_URL: ${{ secrets.API_URL }}
+          API_KEY:           ${{ secrets.API_KEY }}
+          API_URL:           ${{ secrets.API_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scripts/historical_analyzer.py
+        continue-on-error: true
 
-      # ── الخطوة 2: Claude يراجع Top 3 ─────────────────────────
-      - name: Claude AI Review
+      - name: Fetch & Analyze Market Data
         env:
-          API_KEY: ${{ secrets.API_KEY }}
-          API_URL: ${{ secrets.API_URL }}
+          API_KEY:           ${{ secrets.API_KEY }}
+          API_URL:           ${{ secrets.API_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scripts/fetch_api_data.py
 
-      # ── الخطوة 3: فحص جودة الإشارة ───────────────────────────
       - name: Check Signal Quality
+        id: quality_check
         run: python scripts/should_post.py
+        continue-on-error: true  # يبقى true — outcome يُستخدم للشرط في الخطوات التالية
 
-      # ── الخطوة 4: توليد الصورة ────────────────────────────────
-      - name: Generate Signal Image
-        run: python scripts/generate_post.py
+      - name: Generate Post Image
+        if: steps.quality_check.outcome == 'success'
+        run: |
+          if python -c "
+          import json
+          d = json.load(open('data/daily.json'))
+          exit(0 if d.get('type','') == 'اشارة ذهبية' else 1)
+          "; then
+            python scripts/generate_golden_post.py
+          else
+            python scripts/generate_post.py
+          fi
+        continue-on-error: true
 
-      # ── الخطوة 5: نشر الإشارة اليومية على تلغرام ─────────────
-      - name: Post Daily Signal to Telegram
+      - name: Log Signal
+        if: steps.quality_check.outcome == 'success'
+        run: python scripts/log_signal.py
+        continue-on-error: true
+
+      - name: Upload output.png to GitHub
+        if: steps.quality_check.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/upload_output.py
+        continue-on-error: true
+
+      - name: Post to Telegram
+        if: steps.quality_check.outcome == 'success'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scripts/post_to_telegram.py
+        continue-on-error: true
+
+      - name: Post to Facebook
+        if: steps.quality_check.outcome == 'success'
+        env:
+          FB_PAGE_ID:    ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          IMAGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/main/output.png
+        run: python scripts/post_to_facebook.py
+        continue-on-error: true
+
+      - name: Post to Instagram
+        if: steps.quality_check.outcome == 'success'
+        env:
+          FB_PAGE_ID:    ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          IMAGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/main/output.png
+        run: python scripts/post_to_instagram.py
+        continue-on-error: true
+
+      - name: Commit Signal Log
+        if: steps.quality_check.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python - <<'EOF'
-          import os, json, requests
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/signals_log.csv data/golden_signal.json data/news_cache.json data/ml_model.json || true
+          git diff --cached --quiet || git commit -m "📊 اشارة جديدة"
+          git push || true
+        continue-on-error: true
 
-          token      = os.environ["TELEGRAM_BOT_TOKEN"]
-          channel_id = os.environ["TELEGRAM_CHANNEL_ID"]
 
-          with open("data/daily.json", encoding="utf-8") as f:
-              sig = json.load(f)
+  weekly-report:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'schedule' &&
+      github.event.schedule == '30 12 * * 4'
 
-          is_golden  = sig.get("is_golden", False)
-          tag        = "⭐ إشارة ذهبية" if is_golden else "📈 إشارة يومية"
-          warning    = sig.get("claude_warning", None)
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-          caption = f"""{tag}
-━━━━━━━━━━━━━━━━━━━━━━━━━
-🏦 {sig.get('stock_name','')} ({sig.get('symbol','')})
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-💰 نقطة الدخول : {sig.get('entry','')} ريال
-🎯 الهدف الأول : {sig.get('target1','')} ريال (+{sig.get('target1_pct','')}%)
-🎯 الهدف الثاني: {sig.get('target2','')} ريال (+{sig.get('target2_pct','')}%)
-🛑 وقف الخسارة : {sig.get('stop_loss','')} ريال (-{sig.get('stop_loss_pct','')}%)
+      - name: Install Requirements
+        run: pip install -r requirements.txt
+        continue-on-error: true
 
-⏱ الإطار الزمني: {sig.get('expected_days',7)} أيام (أقصاه {sig.get('max_days',10)})
-⚖️ مكافأة/مخاطرة: {sig.get('rr','')}:1
-📊 قوة الإشارة : {sig.get('score','')}/100
-🤖 ثقة Claude  : {sig.get('claude_confidence', sig.get('score',''))}%
+      - name: Train ML Model
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          API_URL: ${{ secrets.API_URL }}
+        run: python scripts/ml_trainer.py
+        continue-on-error: true
 
-💡 {sig.get('claude_reason','')}
-{f"⚠️ {warning}" if warning else ""}
-━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ تحليلات تعليمية فقط — المستثمر يتخذ قراره بنفسه""".strip()
+      - name: Run Backtesting
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          API_URL: ${{ secrets.API_URL }}
+        run: python scripts/backtester.py
+        continue-on-error: true
 
-          with open("data/signal_image.png", "rb") as img:
-              r = requests.post(
-                  f"https://api.telegram.org/bot{token}/sendPhoto",
-                  data={"chat_id": channel_id, "caption": caption},
-                  files={"photo": img},
-                  timeout=30
-              )
-          if r.status_code == 200:
-              print("✅ نُشرت الإشارة اليومية")
-          else:
-              print(f"❌ فشل النشر: {r.text}")
-              exit(1)
-          EOF
+      - name: Generate Weekly Report
+        run: |
+          python scripts/weekly_report.py
+          python scripts/generate_report_image.py
+        continue-on-error: true
 
-      # ── الخطوة 6: نشر الإشارة الذهبية إن وجدت ───────────────
-      - name: Post Golden Signal to Telegram
+      - name: Send Report to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scripts/post_dashboard_to_telegram.py
+        continue-on-error: true
+
+      - name: Commit Weekly Data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python - <<'EOF'
-          import os, json, requests
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/backtest_results.json data/ml_model.json data/training_data.json || true
+          git diff --cached --quiet || git commit -m "📈 تقرير أسبوعي + ML"
+          git push || true
+        continue-on-error: true
 
-          if not os.path.exists("data/golden_signal.json"):
-              print("ℹ️  لا توجد إشارة ذهبية اليوم")
-              exit(0)
 
-          token      = os.environ["TELEGRAM_BOT_TOKEN"]
-          channel_id = os.environ["TELEGRAM_CHANNEL_ID"]
+  track-results:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'schedule' &&
+      github.event.schedule == '0 12 * * 0-4'
 
-          with open("data/golden_signal.json", encoding="utf-8") as f:
-              sig = json.load(f)
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-          warning = sig.get("claude_warning", None)
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-          caption = f"""⭐ إشارة ذهبية حصرية ⭐
-━━━━━━━━━━━━━━━━━━━━━━━━━
-🏦 {sig.get('stock_name','')} ({sig.get('symbol','')})
+      - name: Install Requirements
+        run: pip install -r requirements.txt
+        continue-on-error: true
 
-💰 نقطة الدخول : {sig.get('entry','')} ريال
-🎯 الهدف الأول : {sig.get('target1','')} ريال (+{sig.get('target1_pct','')}%)
-🎯 الهدف الثاني: {sig.get('target2','')} ريال (+{sig.get('target2_pct','')}%)
-🛑 وقف الخسارة : {sig.get('stop_loss','')} ريال (-{sig.get('stop_loss_pct','')}%)
+      - name: Track Signal Results
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          API_URL: ${{ secrets.API_URL }}
+        run: python scripts/track_results.py
+        continue-on-error: true
 
-⏱ الإطار الزمني: {sig.get('expected_days',7)} أيام (أقصاه {sig.get('max_days',10)})
-⚖️ مكافأة/مخاطرة: {sig.get('rr','')}:1
-📊 قوة الإشارة : {sig.get('score','')}/100
-🤖 ثقة Claude  : {sig.get('claude_confidence', sig.get('score',''))}%
-
-💡 {sig.get('claude_reason','')}
-{f"⚠️ {warning}" if warning else ""}
-━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ تحليلات تعليمية فقط — المستثمر يتخذ قراره بنفسه""".strip()
-
-          with open("data/golden_image.png", "rb") as img:
-              r = requests.post(
-                  f"https://api.telegram.org/bot{token}/sendPhoto",
-                  data={"chat_id": channel_id, "caption": caption},
-                  files={"photo": img},
-                  timeout=30
-              )
-          print("✅ نُشرت الإشارة الذهبية" if r.status_code == 200
-                else f"❌ {r.text}")
-          EOF
-
-      # ── الخطوة 7: حفظ السجل ───────────────────────────────────
-      - name: Save & Commit Signal Log
+      - name: Commit Results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python - <<'EOF'
-          import json, csv, os
-
-          for fname, stype in [
-              ("data/daily.json",  "daily"),
-              ("data/golden_signal.json", "golden")
-          ]:
-              if not os.path.exists(fname):
-                  continue
-              with open(fname, encoding="utf-8") as f:
-                  sig = json.load(f)
-              log_file = "data/signals_log.csv"
-              exists   = os.path.exists(log_file)
-              with open(log_file, "a", newline="", encoding="utf-8") as f:
-                  fields = ["date","time","type","symbol","stock_name",
-                            "entry","target1","target2","stop_loss",
-                            "target1_pct","target2_pct","score",
-                            "claude_confidence","status"]
-                  w = csv.DictWriter(f, fieldnames=fields)
-                  if not exists:
-                      w.writeheader()
-                  w.writerow({
-                      "date":             sig.get("date",""),
-                      "time":             sig.get("time",""),
-                      "type":             stype,
-                      "symbol":           sig.get("symbol",""),
-                      "stock_name":       sig.get("stock_name",""),
-                      "entry":            sig.get("entry",""),
-                      "target1":          sig.get("target1",""),
-                      "target2":          sig.get("target2",""),
-                      "stop_loss":        sig.get("stop_loss",""),
-                      "target1_pct":      sig.get("target1_pct",""),
-                      "target2_pct":      sig.get("target2_pct",""),
-                      "score":            sig.get("score",""),
-                      "claude_confidence":sig.get("claude_confidence",""),
-                      "status":           "open"
-                  })
-          EOF
-
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/signals_log.csv || true
-          git diff --staged --quiet || git commit -m "📊 سجل إشارة $(date +'%Y-%m-%d %H:%M')"
+          git diff --cached --quiet || git commit -m "📈 تحديث النتائج"
           git push || true
+        continue-on-error: true
