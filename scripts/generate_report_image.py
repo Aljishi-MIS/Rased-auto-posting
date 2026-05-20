@@ -108,7 +108,7 @@ try:
 except:
     pass
 
-draw.text((W//2,192),"تقرير مضارب الأسبوعي",
+draw.text((W//2,192),"تقرير راصد الأسبوعي",
     fill=GOLD,font=F(50),anchor="mm",direction="rtl",language="ar")
 draw.text((W//2,244),f"{stats['week_start']}  ←  {stats['week_end']}",
     fill=SILVER,font=FR(26),anchor="mm",direction="ltr")
