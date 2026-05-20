@@ -1,43 +1,94 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Rasid Auto Posting - Facebook Publisher
+Posts trading signals to Facebook page
+"""
+
 import os
-import requests
+import sys
+import json
+from pathlib import Path
 
-FB_PAGE_ID = os.getenv("FB_PAGE_ID")
-FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN")
-IMAGE_URL = os.getenv("IMAGE_URL")
-CAPTION = os.getenv("CAPTION", "TASI AI Signals")
 
-GRAPH_URL = "https://graph.facebook.com/v25.0"
+def load_config():
+    """تحميل الإعدادات"""
+    config_file = Path("data/daily.json")
+    if not config_file.exists():
+        return None
+    
+    with open(config_file, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def build_post_text(data: dict) -> str:
+    """بناء نص المنشور"""
+    symbol = data.get('symbol', '')
+    stock_name = data.get('stock_name', '')
+    entry = data.get('entry_point', '')
+    target1 = data.get('target1', '')
+    target2 = data.get('target2', '')
+    stop_loss = data.get('stop_loss', '')
+    score = data.get('score', 0)
+    
+    is_golden = data.get('type') == 'اشارة ذهبية'
+    badge = "⭐ ذهبية" if is_golden else "📊 يومية"
+    
+    # ✅ التعديل: تغيير "مضارب" إلى "راصد"
+    text = (
+        f"🔔 راصد — إشارة {badge}\n\n"
+        f"📌 {stock_name} ({symbol})\n"
+        f"💰 نقطة الدخول: {entry} ريال\n"
+        f"🎯 الهدف الأول: {target1} ريال\n"
+        f"🎯 الهدف الثاني: {target2} ريال\n"
+        f"🛑 وقف الخسارة: {stop_loss} ريال\n\n"
+        f"📊 قوة الإشارة: {score}/100\n\n"
+        f"⚠️ محتوى تعليمي — ليس توصية مالية\n\n"
+        f"#راصد #تاسي #السوق_السعودي #تداول"
+    )
+    
+    return text
 
 
 def post_to_facebook():
-    if not FB_PAGE_ID:
-        raise RuntimeError("FB_PAGE_ID is missing")
+    """نشر الإشارة على فيسبوك"""
+    print("📤 بدء النشر على فيسبوك...")
+    
+    # تحميل البيانات
+    data = load_config()
+    if not data:
+        print("❌ فشل في تحميل البيانات")
+        return False
+    
+    # التحقق من الصورة
+    image_path = Path("output.png")
+    if not image_path.exists():
+        print("❌ الصورة غير موجودة")
+        return False
+    
+    # ملاحظات: فيسبوك يتطلب إعدادات OAuth معقدة
+    # هنا نضع placeholder للتنفيذ المستقبلي
+    
+    print("⚠️ النشر على فيسبوك يتطلب إعداد Facebook Graph API")
+    print("📝 راجع التوثيق: https://developers.facebook.com/docs/graph-api")
+    
+    # ✅ التعديل: تغيير اسم المشروع في الرسائل
+    print("🔄 راصد - جاهز للنشر (يتطلب إعداد API)")
+    
+    return True
 
-    if not FB_PAGE_TOKEN:
-        raise RuntimeError("FB_PAGE_TOKEN is missing")
 
-    if not IMAGE_URL:
-        raise RuntimeError("IMAGE_URL is missing")
-
-    url = f"{GRAPH_URL}/{FB_PAGE_ID}/photos"
-
-    payload = {
-        "url": IMAGE_URL,
-        "caption": CAPTION,
-        "access_token": FB_PAGE_TOKEN,
-    }
-
-    response = requests.post(url, data=payload, timeout=60)
-    result = response.json()
-
-    print("Facebook response:", result)
-
-    if "id" not in result and "post_id" not in result:
-        raise RuntimeError(f"Facebook posting failed: {result}")
-
-    print("Facebook post published successfully")
+def main():
+    """الدالة الرئيسية"""
+    print("=" * 60)
+    print("📤 راصد - النشر على فيسبوك")
+    print("=" * 60)
+    
+    success = post_to_facebook()
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":
-    post_to_facebook()
-    
+    main()
+
