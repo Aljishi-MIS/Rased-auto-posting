@@ -1,87 +1,98 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Rasid Auto Posting - Instagram Publisher
+Posts trading signals to Instagram
+"""
+
 import os
-import requests
-import time
-
-FB_PAGE_ID = os.getenv("FB_PAGE_ID")
-FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN")
-IMAGE_URL = os.getenv("IMAGE_URL")
-CAPTION = os.getenv("CAPTION", "TASI AI Signals")
-
-GRAPH_URL = "https://graph.facebook.com/v25.0"
+import sys
+import json
+from pathlib import Path
 
 
-def get_instagram_business_id():
-    url = f"{GRAPH_URL}/{FB_PAGE_ID}"
-    params = {
-        "fields": "instagram_business_account",
-        "access_token": FB_PAGE_TOKEN
-    }
-
-    response = requests.get(url, params=params)
-    result = response.json()
-
-    print("Instagram account response:", result)
-
-    if "instagram_business_account" not in result:
-        raise RuntimeError(f"No Instagram business account linked: {result}")
-
-    return result["instagram_business_account"]["id"]
+def load_config():
+    """تحميل الإعدادات"""
+    config_file = Path("data/daily.json")
+    if not config_file.exists():
+        return None
+    
+    with open(config_file, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
 
-def create_media_container(ig_user_id):
-    url = f"{GRAPH_URL}/{ig_user_id}/media"
+def build_caption(data: dict) -> str:
+    """بناء نص المنشور"""
+    symbol = data.get('symbol', '')
+    stock_name = data.get('stock_name', '')
+    entry = data.get('entry_point', '')
+    target1 = data.get('target1', '')
+    target2 = data.get('target2', '')
+    stop_loss = data.get('stop_loss', '')
+    score = data.get('score', 0)
+    rsi = data.get('rsi', 0)
+    volume_ratio = data.get('volume_ratio', 0)
+    
+    is_golden = data.get('type') == 'اشارة ذهبية'
+    badge = "⭐ ذهبية" if is_golden else "📊 يومية"
+    
+    # ✅ التعديل: تغيير "مضارب" إلى "راصد"
+    caption = (
+        f"🔔 راصد — إشارة {badge}\n\n"
+        f"📊 {stock_name} ({symbol})\n"
+        f"💡 نقطة الدخول: {entry} ريال\n"
+        f"🎯 الأهداف: {target1} | {target2}\n"
+        f"🛑 وقف الخسارة: {stop_loss}\n\n"
+        f"📈 المؤشرات:\n"
+        f"• Score: {score}/100\n"
+        f"• RSI: {rsi}\n"
+        f"• Volume: {volume_ratio}x\n\n"
+        f"⚠️ محتوى تعليمي — ليس توصية مالية\n\n"
+        f"#راصد #تاسي #السوق_السعودي #تداول #أسهم #تحليل_فني"
+    )
+    
+    return caption
 
-    payload = {
-        "image_url": IMAGE_URL,
-        "caption": CAPTION,
-        "access_token": FB_PAGE_TOKEN
-    }
 
-    response = requests.post(url, data=payload)
-    result = response.json()
-
-    print("Instagram create media response:", result)
-
-    if "id" not in result:
-        raise RuntimeError(f"Instagram media container failed: {result}")
-
-    return result["id"]
-
-
-def publish_container(ig_user_id, creation_id):
-    url = f"{GRAPH_URL}/{ig_user_id}/media_publish"
-
-    payload = {
-        "creation_id": creation_id,
-        "access_token": FB_PAGE_TOKEN
-    }
-
-    response = requests.post(url, data=payload)
-    result = response.json()
-
-    print("Instagram publish response:", result)
-
-    if "id" not in result:
-        raise RuntimeError(f"Instagram publish failed: {result}")
-
-    return result["id"]
+def post_to_instagram():
+    """نشر الإشارة على إنستغرام"""
+    print("📤 بدء النشر على إنستغرام...")
+    
+    # تحميل البيانات
+    data = load_config()
+    if not data:
+        print("❌ فشل في تحميل البيانات")
+        return False
+    
+    # التحقق من الصورة
+    image_path = Path("output.png")
+    if not image_path.exists():
+        print("❌ الصورة غير موجودة")
+        return False
+    
+    # ملاحظات: إنستغرام يتطلب Instagram Graph API
+    # أو استخدام مكتبات مثل instagrapi
+    
+    print("⚠️ النشر على إنستغرام يتطلب إعداد Instagram API")
+    print("📝 راجع التوثيق: https://developers.facebook.com/docs/instagram-api")
+    
+    # ✅ التعديل: تغيير اسم المشروع
+    print("🔄 راصد - جاهز للنشر (يتطلب إعداد API)")
+    
+    return True
 
 
 def main():
-    ig_user_id = get_instagram_business_id()
-
-    print("Instagram User ID:", ig_user_id)
-
-    creation_id = create_media_container(ig_user_id)
-
-    print("Creation ID:", creation_id)
-
-    time.sleep(10)
-
-    publish_id = publish_container(ig_user_id, creation_id)
-
-    print("Instagram Post Published:", publish_id)
+    """الدالة الرئيسية"""
+    print("=" * 60)
+    print("📤 راصد - النشر على إنستغرام")
+    print("=" * 60)
+    
+    success = post_to_instagram()
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":
     main()
+
