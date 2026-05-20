@@ -1,4 +1,4 @@
-# 📊 Modareb Auto Posting
+# 📊 Rased AI Auto Posting
 
 نظام أتمتة لإنشاء ونشر صور إشارات التداول بشكل احترافي.
 
