@@ -241,7 +241,7 @@ def build_signal(best, opening_data):
     )
 
     return {
-        "brand":          "مضارب",
+        "brand":          "راصد",
         "mode":           "opening",
         "stock_name":     best["name"],
         "symbol":         best["symbol"],
