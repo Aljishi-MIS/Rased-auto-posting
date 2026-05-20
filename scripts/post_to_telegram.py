@@ -45,13 +45,32 @@ target2_pct    = data.get("target2_pct",       10.0)
 expected_days  = data.get("expected_days",     7)
 max_days       = data.get("max_days",          10)
 acceleration   = data.get("acceleration",      0)
+signal_type    = data.get("type",              "")
 
 pct_entry = pct(price,  entry)
 pct_t1    = pct(entry,  target1)
 pct_t2    = pct(entry,  target2)
 pct_stop  = pct(entry,  stop_loss)
 
-# قسم الاخبار
+# رابط سجل الأداء
+TRACK_URL = "https://aljishi.github.io/modareb-auto-posting/"
+
+# نوع الإشارة
+is_golden    = signal_type == "اشارة ذهبية"
+signal_emoji = "⭐" if is_golden else "📊"
+signal_label = "إشارة ذهبية — مضارب" if is_golden else "اشارة اليوم — مضارب"
+
+# قسم الإطار الزمني
+time_section = f"\n⏱ الإطار الزمني: *{expected_days}-{max_days} أيام* (هدف {target2_pct:.0f}%)"
+
+# قسم التسارع
+accel_section = ""
+if acceleration >= 30:
+    accel_section = f"\n🚀 *تسارع قوي* — {acceleration}/50"
+elif acceleration >= 15:
+    accel_section = f"\n📊 *تسارع متوسط* — {acceleration}/50"
+
+# قسم الأخبار
 news_section = ""
 if news_summary:
     news_emoji = "✅" if news_sentiment == "positive" else "❌" if news_sentiment == "negative" else "➖"
@@ -67,15 +86,8 @@ if claude_conf:
     conf_emoji = "🟢" if claude_conf == "عالية" else "🟡" if claude_conf == "متوسطة" else "🔴"
     claude_section += f"\n{conf_emoji} *الثقة:* {claude_conf}"
 
-# قسم التسارع
-accel_section = ""
-if acceleration >= 30:
-    accel_section = f"\n🚀 *تسارع قوي* — زخم {acceleration}/50"
-elif acceleration >= 15:
-    accel_section = f"\n📊 *تسارع متوسط* — {acceleration}/50"
-
 caption = f"""
-*اشارة اليوم — مضارب*
+{signal_emoji} *{signal_label}*
 
 📊 *{stock_name} — {symbol}*
 🏢 القطاع: {sector if sector else "—"}
@@ -87,17 +99,18 @@ caption = f"""
 🟢 الهدف الثاني: *{target2} ريال* {pct_t2}
 
 🔴 وقف الخسارة: *{stop_loss} ريال* {pct_stop}
+{time_section}{accel_section}
 
-⏱ الإطار الزمني: *{expected_days}-{max_days} أيام* (هدف {target2_pct:.0f}%)
 ⚡ الزخم: *{momentum}*
 📈 RS Rank: *{rs_rank}*
 🔢 Score: *{score}*
 
-📌 {note}{accel_section}{news_section}{claude_section}
+📌 {note}{news_section}{claude_section}
 
 🕐 {generated}
 
 ⚠️ _محتوى تعليمي وتحليلي فقط — لا يعد توصية استثمارية_
+📈 [سجل الأداء]({TRACK_URL})
 """.strip()
 
 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
