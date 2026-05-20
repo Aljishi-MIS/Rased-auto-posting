@@ -50,7 +50,7 @@ def build_report(signals, week_signals):
         status_icon = {"win": "✅", "loss": "❌", "open": "⏳", "expired": "⏰"}.get(s.get("status", ""), "•")
         week_lines += f"\n{status_icon} {s.get('stock_name','')} ({s.get('symbol','')}) | دخول: {s.get('entry','')} | هدف: {s.get('target1','')} | وقف: {s.get('stop_loss','')}"
 
-    report = f"""📊 تقرير مضارب الأسبوعي
+    report = f"""📊 تقرير راصد الأسبوعي
 {datetime.now().strftime('%Y-%m-%d')}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
