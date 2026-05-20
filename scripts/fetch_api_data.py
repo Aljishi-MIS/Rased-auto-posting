@@ -1,5 +1,5 @@
 """
-fetch_api_data.py — TASI AI مضارب
+fetch_api_data.py — TASI AI راصد
 جلب بيانات السوق السعودي وتحليلها تلقائياً
 الإصدار 3.0 — مع error handling شامل + fallback مضمون
 """
@@ -539,7 +539,7 @@ def build_daily_json(stock, score, reasons, rr, volume_ratio, news_analysis=None
     if extra: signal_reason = signal_reason + " + " + " + ".join(extra[:2])
 
     return {
-        "brand":"مضارب","mode":"morning",
+        "brand":"راصد","mode":"morning",
         "stock_name":stock.get("name",""),"symbol":str(stock.get("symbol","")),
         "price":f"{price:.2f}","entry":f"{entry:.2f}",
         "target1":f"{target1:.2f}","target2":f"{target2:.2f}","stop_loss":f"{stop_loss:.2f}",
@@ -615,7 +615,7 @@ def claude_review(candidates, top_sectors):
 
 def main():
     print("="*65)
-    print("📊 TASI AI مضارب — Fetch & Analyze Market Data v3.0")
+    print("📊 TASI AI راصد — Fetch & Analyze Market Data v3.0")
     print("="*65)
 
     if not is_market_open():
