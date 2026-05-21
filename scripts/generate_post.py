@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Rasid Auto Posting - Image Generator
-Generates professional trading signal images from JSON data
+Rased Auto Posting - Image Generator
+مُولّد صور إشارات راصد الاحترافية
 """
 
 import json
@@ -19,63 +19,106 @@ except ImportError:
     print("💡 قم بتثبيتها عبر: pip install Pillow")
     sys.exit(1)
 
-class SignalImageGenerator:
-    """فئة لتوليد صور إشارات التداول"""
-    
-    # الثوابت
-    WIDTH = 900
-    HEIGHT = 1200
-    BG_COLOR = (10, 14, 39)
-    CARD_BG = (26, 31, 58)
-    GREEN_COLOR = (0, 208, 156)
-    RED_COLOR = (255, 71, 87)
-    GOLD_COLOR = (255, 165, 2)
-    TEXT_COLOR = (255, 255, 255)
-    TEXT_SECONDARY = (164, 176, 190)
-    BORDER_COLOR = (255, 165, 2)
-    
-    def __init__(self, data_file: str = "data/daily.json", is_golden: bool = False):
+# استيراد إعدادات راصد
+try:
+    from config import BRAND, FONT, BRANDING, IMAGE, DATA
+except ImportError:
+    print("⚠️ تحذير: ملف config.py غير موجود - استخدام الإعدادات الافتراضية")
+    # إعدادات افتراضية في حال عدم وجود config.py
+    BRAND = {
+        "primary": "#0F1A3C",
+        "accent": "#D4AF37",
+        "success": "#27AE60",
+        "danger": "#E74C3C",
+        "text_primary": "#F8F9FA",
+        "text_secondary": "#A4B0BE",
+        "muted": "#64748B",
+        "card_bg": "#1A2744",
+    }
+    FONT = {
+        "arabic": "Tajawal",
+        "sizes": {"title": 48, "large": 32, "medium": 24, "small": 18, "tiny": 14}
+    }
+    BRANDING = {
+        "name": "راصد",
+        "slogan": "عينك على الفرص",
+        "watermark": "بواسطة راصد | عينك على الفرص"
+    }
+    IMAGE = {
+        "width": 1080,
+        "height": 1920,
+        "padding": 80,
+        "card_radius": 15,
+    }
+
+
+class RasedSignalGenerator:
+    """مُولّد صور إشارات راصد الاحترافية"""
+
+    def __init__(self, data_file: str = None):
         """
         تهيئة المولد
         
         Args:
             data_file: مسار ملف البيانات JSON
-            is_golden: هل هذه إشارة ذهبية
         """
-        self.data_file = Path(data_file)
-        self.is_golden = is_golden
+        self.data_file = Path(data_file or DATA["daily_file"])
         self.data = None
         self.img = None
         self.draw = None
         
         # تحميل الخطوط
-        self.font_xxlarge = self._load_font(48, bold=True)
-        self.font_xlarge = self._load_font(36, bold=True)
-        self.font_large = self._load_font(28, bold=True)
-        self.font_medium = self._load_font(24)
-        self.font_small = self._load_font(20)
-        self.font_tiny = self._load_font(16)
-    
-    def _load_font(self, size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-        """تحميل الخط مع fallback للخط الافتراضي"""
+        self._load_fonts()
+
+    def _load_fonts(self):
+        """تحميل خطوط راصد"""
+        font_sizes = FONT["sizes"]
+        
+        self.fonts = {
+            "title": self._load_font("Bold", font_sizes["title"]),
+            "large": self._load_font("Bold", font_sizes["large"]),
+            "medium": self._load_font("Regular", font_sizes["medium"]),
+            "small": self._load_font("Regular", font_sizes["small"]),
+            "tiny": self._load_font("Light", font_sizes["tiny"]),
+        }
+
+    def _load_font(self, weight: str, size: int):
+        """
+        تحميل الخط مع fallback
+        
+        Args:
+            weight: وزن الخط (Bold, Regular, etc.)
+            size: حجم الخط
+            
+        Returns:
+            ImageFont object
+        """
+        # محاولة تحميل خط Tajawal من مجلد assets
         font_paths = [
-            f"fonts/Tajawal-{'Bold' if bold else 'Regular'}.ttf",
-            f"/usr/share/fonts/truetype/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            f"assets/fonts/Tajawal-{weight}.ttf",
+            f"assets/fonts/{weight}.ttf",
+            f"fonts/Tajawal-{weight}.ttf",
         ]
         
-        for path in font_paths:
+        for font_path in font_paths:
             try:
-                if Path(path).exists():
-                    return ImageFont.truetype(path, size)
+                if Path(font_path).exists():
+                    return ImageFont.truetype(font_path, size)
             except Exception:
-                pass
+                continue
         
+        # محاولة تحميل من النظام
         try:
-            return ImageFont.truetype("arial.ttf", size)
+            return ImageFont.truetype(f"arial.ttf", size)
+        except Exception:
+            pass
+        
+        # الخط الافتراضي
+        try:
+            return ImageFont.load_default()
         except Exception:
             return ImageFont.load_default()
-    
+
     def load_data(self) -> bool:
         """
         تحميل البيانات من ملف JSON
@@ -87,536 +130,351 @@ class SignalImageGenerator:
             if not self.data_file.exists():
                 print(f"❌ ملف البيانات غير موجود: {self.data_file}")
                 return False
-            
+
             with open(self.data_file, 'r', encoding='utf-8') as f:
                 self.data = json.load(f)
+
+            # التحقق من الحقول المطلوبة
+            required_fields = ['stock_name', 'stock_symbol', 'current_price',
+                             'entry_point', 'target1', 'stop_loss']
             
-            print(f"✅ تم تحميل البيانات بنجاح: {self.data.get('stock_name', '')}")
+            for field in required_fields:
+                if field not in self.data:
+                    print(f"❌ الحقل المطلوب مفقود: {field}")
+                    return False
+
+            print(f"✅ تم تحميل البيانات: {self.data['stock_name']} ({self.data['stock_symbol']})")
             return True
-            
+
         except json.JSONDecodeError as e:
             print(f"❌ خطأ في تنسيق JSON: {e}")
             return False
         except Exception as e:
             print(f"❌ خطأ غير متوقع: {e}")
             return False
-    
+
     def create_base_image(self):
-        """إنشاء الصورة الأساسية مع الخلفية والإطار"""
-        self.img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.BG_COLOR)
+        """إنشاء الصورة الأساسية مع خلفية راصد"""
+        self.img = Image.new('RGB', (IMAGE["width"], IMAGE["height"]), BRAND["primary"])
         self.draw = ImageDraw.Draw(self.img)
         
-        # رسم الإطار الذهبي الخارجي
-        border_width = 3
-        self.draw.rectangle(
-            [(border_width, border_width), 
-             (self.WIDTH - border_width, self.HEIGHT - border_width)],
-            outline=self.BORDER_COLOR,
-            width=border_width
-        )
-    
+        # إضافة تدرج لوني خفيف للخلفية
+        self._add_gradient_background()
+
+    def _add_gradient_background(self):
+        """إضافة تدرج لوني للخلفية"""
+        # إنشاء تدرج من الكحلي الداكن إلى الأسود في الأسفل
+        for y in range(IMAGE["height"]):
+            # حساب نسبة الارتفاع (0 في الأعلى، 1 في الأسفل)
+            ratio = y / IMAGE["height"]
+            
+            # مزج اللون الأساسي مع الأسود
+            r = int(BRAND["primary"][1:3], 16) * (1 - ratio * 0.3)
+            g = int(BRAND["primary"][3:5], 16) * (1 - ratio * 0.3)
+            b = int(BRAND["primary"][5:7], 16) * (1 - ratio * 0.3)
+            
+            self.draw.line([(0, y), (IMAGE["width"], y)], fill=(int(r), int(g), int(b)))
+
     def draw_header(self):
-        """رسم الرأس (الشعار والعنوان)"""
-        y_offset = 40
+        """رسم الرأس مع شعار راصد"""
+        padding = IMAGE["padding"]
         
-        # الشعار الدائري
-        logo_size = 70
-        logo_x = self.WIDTH // 2
-        logo_y = y_offset + logo_size // 2
+        # الشعار (أيقونة العين)
+        logo_text = "👁️"
+        self.draw.text((padding, 50), logo_text, 
+                      font=self.fonts["title"], fill=BRAND["accent"])
         
-        # الدائرة الذهبية
-        self.draw.ellipse(
-            [(logo_x - logo_size//2, logo_y - logo_size//2),
-             (logo_x + logo_size//2, logo_y + logo_size//2)],
-            outline=self.GOLD_COLOR,
-            width=3
-        )
+        # عنوان "إشارة اليوم"
+        title = f"{BRANDING['name']} | إشارة اليوم"
+        self.draw.text((IMAGE["width"]//2, 60), title,
+                      font=self.fonts["large"], fill=BRAND["text_primary"], anchor="mm")
         
-        # أيقونة داخل الدائرة (مبسطة)
-        self.draw.text(
-            (logo_x, logo_y),
-            "📊",
-            font=self.font_large,
-            fill=self.GOLD_COLOR,
-            anchor="mm"
-        )
-        
-        # اسم المشروع
-        y_offset += logo_size + 15
-        self.draw.text(
-            (self.WIDTH // 2, y_offset),
-            "راصد",
-            font=self.font_xlarge,
-            fill=self.GOLD_COLOR,
-            anchor="mm"
-        )
-        
-        # النص تحت الشعار
-        y_offset += 45
-        if self.is_golden:
-            subtitle = "تحليل ذكي متعمق - 20 يوم تاريخي"
-            badge_text = "⭐ اشارة ذهبية"
-        else:
-            subtitle = "تحليل فني وتعليمي لسوق الأسهم السعودية"
-            badge_text = "📊 اشارة يومية"
-        
-        self.draw.text(
-            (self.WIDTH // 2, y_offset),
-            subtitle,
-            font=self.font_small,
-            fill=self.TEXT_SECONDARY,
-            anchor="mm"
-        )
-        
-        # شارة نوع الإشارة
-        y_offset += 35
-        badge_width = 180
-        badge_height = 35
-        badge_x1 = (self.WIDTH - badge_width) // 2
-        badge_y1 = y_offset - badge_height // 2
-        
-        self.draw.rounded_rectangle(
-            [(badge_x1, badge_y1), (badge_x1 + badge_width, badge_y1 + badge_height)],
-            radius=18,
-            fill=self.GOLD_COLOR
-        )
-        
-        self.draw.text(
-            ((self.WIDTH) // 2, y_offset),
-            badge_text,
-            font=self.font_medium,
-            fill=self.BG_COLOR,
-            anchor="mm"
-        )
-        
-        # التاريخ والوقت
-        now = datetime.now()
-        date_text = now.strftime("%Y/%m/%d")
-        time_text = now.strftime("%I:%M %p")
-        
-        self.draw.text(
-            (self.WIDTH - 90, 30),
-            date_text,
-            font=self.font_tiny,
-            fill=self.TEXT_SECONDARY,
-            anchor="rm"
-        )
-        
-        self.draw.text(
-            (90, 30),
-            time_text,
-            font=self.font_tiny,
-            fill=self.TEXT_SECONDARY,
-            anchor="lm"
-        )
-        
-        # خط فاصل
-        y_offset += 55
-        self.draw.line(
-            [(80, y_offset), (self.WIDTH - 80, y_offset)],
-            fill=self.GOLD_COLOR,
-            width=2
-        )
-    
-    def draw_stock_name(self):
-        """رسم اسم السهم والرمز"""
+        # الخط الفاصل الذهبي
+        y_offset = 110
+        self.draw.line([(padding, y_offset), (IMAGE["width"]-padding, y_offset)],
+                      fill=BRAND["accent"], width=IMAGE["line_width"])
+
+    def draw_stock_info(self):
+        """رسم معلومات السهم"""
         if not self.data:
             return
-        
-        y_offset = 330
-        
+
+        y_start = 180
+        padding = IMAGE["padding"]
+
         # اسم السهم والرمز
-        stock_name = self.data.get('stock_name', '')
-        symbol = self.data.get('symbol', '')
-        stock_text = f"{stock_name} - {symbol}"
+        stock_text = f"{self.data['stock_name']} — {self.data['stock_symbol']}"
+        self.draw.text((IMAGE["width"]//2, y_start), stock_text,
+                      font=self.fonts["large"], fill=BRAND["success"], anchor="mm")
+
+        # القطاع
+        if 'sector' in self.data:
+            y_start += 50
+            sector_text = f"🏢 القطاع: {self.data['sector']}"
+            self.draw.text((IMAGE["width"]//2, y_start), sector_text,
+                          font=self.fonts["medium"], fill=BRAND["text_secondary"], anchor="mm")
+
+        # السعر الحالي (بطاقة مميزة)
+        y_start += 90
+        price_text = f"💰 السعر الحالي: {self.data['current_price']} ريال"
+        self._draw_card(price_text, y_start, BRAND["accent"], highlight=True)
+
+    def _draw_card(self, text: str, y: int, color: str = None, highlight: bool = False):
+        """
+        رسم بطاقة نصية
         
-        self.draw.text(
-            (self.WIDTH // 2, y_offset),
-            stock_text,
-            font=self.font_xxlarge,
-            fill=self.TEXT_COLOR,
-            anchor="mm"
-        )
-        
-        # خط فاصل تحت الاسم
-        y_offset += 50
-        self.draw.line(
-            [(self.WIDTH // 2 - 150, y_offset), (self.WIDTH // 2 + 150, y_offset)],
-            fill=self.GOLD_COLOR,
-            width=2
-        )
-    
-    def _draw_data_row(self, y: int, label: str, value: str, 
-                       value_color: tuple = None, icon: str = "",
-                       left_badge: str = None):
-        """رسم صف بيانات مع بطاقة"""
-        
-        card_height = 70
-        card_margin = 60
-        card_x1 = card_margin
-        card_y1 = y - card_height // 2
-        card_x2 = self.WIDTH - card_margin
-        card_y2 = y + card_height // 2
-        
+        Args:
+            text: النص
+            y: الموضع العمودي
+            color: لون النص
+            highlight: هل البطاقة مميزة
+        """
+        padding = IMAGE["padding"]
+        card_width = IMAGE["width"] - (padding * 2)
+        card_height = 80 if not highlight else 90
+        radius = IMAGE["card_radius"]
+
+        x1 = padding
+        y1 = y - card_height // 2
+        x2 = x1 + card_width
+        y2 = y1 + card_height
+
         # خلفية البطاقة
-        self.draw.rounded_rectangle(
-            [(card_x1, card_y1), (card_x2, card_y2)],
-            radius=12,
-            fill=self.CARD_BG
-        )
+        bg_color = BRAND["accent"] if highlight else BRAND["card_bg"]
+        self.draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=radius, fill=bg_color)
+
+        # حدود ذهبية للبطاقات المميزة
+        if highlight:
+            self.draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=radius, 
+                                       outline=BRAND["text_primary"], width=2)
+
+        # النص
+        text_color = BRAND["primary"] if highlight else (color or BRAND["text_primary"])
+        font = self.fonts["large"] if highlight else self.fonts["medium"]
         
-        # الأيقونة على اليمين
-        if icon:
-            self.draw.text(
-                (card_x2 - 40, y),
-                icon,
-                font=self.font_medium,
-                fill=self.TEXT_SECONDARY,
-                anchor="rm"
-            )
-            label_x = card_x2 - 70
-        else:
-            label_x = card_x2 - 30
-        
-        # النص (label على اليمين، value على اليسار)
-        self.draw.text(
-            (label_x, y),
-            label,
-            font=self.font_medium,
-            fill=self.TEXT_SECONDARY,
-            anchor="rm"
-        )
-        
-        # القيمة
-        value_color = value_color or self.TEXT_COLOR
-        value_x = card_x1 + 30
-        
-        # إذا كان هناك badge على اليسار (للنسبة المئوية)
-        if left_badge:
-            # حساب عرض القيمة
-            bbox = self.draw.textbbox((0, 0), value, font=self.font_large)
-            value_width = bbox[2] - bbox[0]
-            
-            # رسم القيمة
-            self.draw.text(
-                (value_x, y),
-                value,
-                font=self.font_large,
-                fill=value_color,
-                anchor="lm"
-            )
-            
-            # رسمbadge
-            badge_x = value_x + value_width + 15
-            badge_width = 70
-            badge_height = 30
-            
-            badge_color = self.GREEN_COLOR if '+' in left_badge else self.RED_COLOR
-            
-            self.draw.rounded_rectangle(
-                [(badge_x, y - badge_height//2), 
-                 (badge_x + badge_width, y + badge_height//2)],
-                radius=8,
-                outline=badge_color,
-                width=2
-            )
-            
-            self.draw.text(
-                (badge_x + badge_width//2, y),
-                left_badge,
-                font=self.font_small,
-                fill=badge_color,
-                anchor="mm"
-            )
-        else:
-            self.draw.text(
-                (value_x, y),
-                value,
-                font=self.font_large,
-                fill=value_color,
-                anchor="lm"
-            )
-        
-        return y + card_height + 12
-    
-    def draw_price_data(self):
-        """رسم بيانات الأسعار"""
+        # حساب موضع النص للتوسيط
+        bbox = self.draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        x_text = (x1 + x2) // 2
+        y_text = (y1 + y2) // 2
+
+        self.draw.text((x_text, y_text), text, font=font,
+                      fill=text_color, anchor="mm")
+
+    def draw_targets(self):
+        """رسم الأهداف ووقف الخسارة"""
         if not self.data:
             return
-        
-        y_offset = 420
-        
-        # السعر الحالي
-        current_price = self.data.get('current_price', '')
-        self._draw_data_row(
-            y_offset,
-            "السعر الحالي:",
-            f"{current_price} ريال",
-            icon="📊",
-            value_color=self.GOLD_COLOR
-        )
-        
-        # نقطة الدخول
-        y_offset += 82
-        entry_point = self.data.get('entry_point', '')
-        self._draw_data_row(
-            y_offset,
-            "نقطة الدخول:",
-            f"{entry_point} ريال",
-            icon="🎯",
-            value_color=self.GOLD_COLOR
-        )
-        
+
+        y_start = 520
+        padding = IMAGE["padding"]
+
+        # عنوان الأهداف
+        self.draw.text((padding, y_start), "🎯 الأهداف",
+                      font=self.fonts["medium"], fill=BRAND["text_primary"])
+
         # الهدف الأول
-        y_offset += 82
-        target1 = self.data.get('target1', '')
-        target1_pct = self.data.get('target1_percent', '')
-        self._draw_data_row(
-            y_offset,
-            "الهدف الأول:",
-            f"{target1} ريال",
-            icon="🎯",
-            value_color=self.GREEN_COLOR,
-            left_badge=f"+{target1_pct}%" if target1_pct else None
-        )
-        
+        if 'target1' in self.data:
+            y_start += 70
+            target1_text = f"🟢 الهدف الأول: {self.data['target1']} ريال"
+            if 'target1_percent' in self.data:
+                target1_text += f" (+{self.data['target1_percent']}%)"
+            self._draw_card(target1_text, y_start, BRAND["success"])
+
         # الهدف الثاني
-        y_offset += 82
-        target2 = self.data.get('target2', '')
-        target2_pct = self.data.get('target2_percent', '')
-        self._draw_data_row(
-            y_offset,
-            "الهدف الثاني:",
-            f"{target2} ريال",
-            icon="🎯",
-            value_color=self.GREEN_COLOR,
-            left_badge=f"+{target2_pct}%" if target2_pct else None
-        )
-        
+        if 'target2' in self.data:
+            y_start += 90
+            target2_text = f"🟢 الهدف الثاني: {self.data['target2']} ريال"
+            if 'target2_percent' in self.data:
+                target2_text += f" (+{self.data['target2_percent']}%)"
+            self._draw_card(target2_text, y_start, BRAND["success"])
+
         # وقف الخسارة
-        y_offset += 82
-        stop_loss = self.data.get('stop_loss', '')
-        stop_loss_pct = self.data.get('stop_loss_percent', '')
-        self._draw_data_row(
-            y_offset,
-            "وقف الخسارة:",
-            f"{stop_loss} ريال",
-            icon="❌",
-            value_color=self.RED_COLOR,
-            left_badge=f"-{stop_loss_pct}%" if stop_loss_pct else None
-        )
-    
-    def draw_indicators(self):
-        """رسم المؤشرات الفنية"""
+        if 'stop_loss' in self.data:
+            y_start += 90
+            stop_text = f"🔴 وقف الخسارة: {self.data['stop_loss']} ريال"
+            if 'stop_loss_percent' in self.data:
+                stop_text += f" (-{self.data['stop_loss_percent']}%)"
+            self._draw_card(stop_text, y_start, BRAND["danger"])
+
+    def draw_analysis(self):
+        """رسم التحليل الفني"""
         if not self.data:
             return
-        
-        y_offset = 920
-        
-        # بطاقة المؤشرات
-        card_height = 60
-        card_margin = 60
-        card_x1 = card_margin
-        card_y1 = y_offset - card_height // 2
-        card_x2 = self.WIDTH - card_margin
-        card_y2 = y_offset + card_height // 2
-        
-        self.draw.rounded_rectangle(
-            [(card_x1, card_y1), (card_x2, card_y2)],
-            radius=12,
-            fill=self.CARD_BG
-        )
-        
-        # RSI
-        rsi = self.data.get('rsi', '')
-        rsi_x = card_x1 + 100
-        self.draw.text(
-            (rsi_x, y_offset),
-            f"RSI {rsi}",
-            font=self.font_medium,
-            fill=self.TEXT_COLOR,
-            anchor="mm"
-        )
-        
-        # Volume
-        volume = self.data.get('volume_ratio', '')
-        vol_x = self.WIDTH // 2
-        self.draw.text(
-            (vol_x, y_offset),
-            f"Vol {volume}x",
-            font=self.font_medium,
-            fill=self.GOLD_COLOR,
-            anchor="mm"
-        )
-        
+
+        y_start = 950
+        padding = IMAGE["padding"]
+
+        # الإطار الزمني
+        if 'timeframe' in self.data:
+            self.draw.text((padding, y_start), 
+                          f"⏱ الإطار الزمني: {self.data['timeframe']}",
+                          font=self.fonts["small"], fill=BRAND["text_secondary"])
+            y_start += 45
+
+        # الزخم
+        if 'momentum' in self.data:
+            self.draw.text((padding, y_start), 
+                          f"⚡ الزخم: {self.data['momentum']}",
+                          font=self.fonts["small"], fill=BRAND["accent"])
+            y_start += 40
+
+        # RS Rank
+        if 'rs_rank' in self.data:
+            self.draw.text((padding, y_start), 
+                          f"📈 RS Rank: {self.data['rs_rank']}",
+                          font=self.fonts["small"], fill=BRAND["text_primary"])
+            y_start += 35
+
         # Score
-        score = self.data.get('score', '')
-        score_x = card_x2 - 100
-        self.draw.text(
-            (score_x, y_offset),
-            f"Score {score}",
-            font=self.font_medium,
-            fill=self.TEXT_COLOR,
-            anchor="mm"
-        )
-    
-    def draw_technical_reading(self):
-        """رسم القراءة الفنية"""
-        if not self.data:
-            return
+        if 'score' in self.data:
+            score_color = BRAND["success"] if self.data['score'] >= 80 else BRAND["accent"]
+            self.draw.text((padding, y_start), 
+                          f"🔢 Score: {self.data['score']}/100",
+                          font=self.fonts["small"], fill=score_color)
+            y_start += 50
+
+        # القراءة الفنية
+        if 'technical_reading' in self.data:
+            self.draw.text((padding, y_start), "📌 قراءة فنية:",
+                          font=self.fonts["small"], fill=BRAND["text_primary"])
+            y_start += 40
+
+            # تقسيم النص الطويل
+            reading = self.data['technical_reading']
+            lines = self._wrap_text(reading, max_width=IMAGE["width"]-(padding*2), 
+                                   font=self.fonts["tiny"])
+            
+            for line in lines[:6]:  # الحد الأقصى 6 أسطر
+                self.draw.text((padding, y_start), f" • {line}",
+                              font=self.fonts["tiny"], fill=BRAND["text_secondary"])
+                y_start += 32
+
+        # الثقة
+        if 'confidence' in self.data:
+            y_start += 30
+            conf = self.data['confidence']
+            conf_color = BRAND["success"] if conf in ['عالية', 'متوسطة'] else BRAND["accent"]
+            self.draw.text((padding, y_start), f"🟡 الثقة: {conf}",
+                          font=self.fonts["small"], fill=conf_color)
+
+    def _wrap_text(self, text: str, max_width: int, font) -> list:
+        """
+        تقسيم النص الطويل إلى أسطر متعددة
         
-        y_offset = 1010
-        
-        technical_reading = self.data.get('technical_reading', '')
-        
-        if technical_reading:
-            # تقسيم النص إلى أسطر
-            words = technical_reading.split()
-            lines = []
-            current_line = ""
+        Args:
+            text: النص
+            max_width: العرض الأقصى
+            font: الخط المستخدم
             
-            for word in words:
-                test_line = current_line + " " + word if current_line else word
-                bbox = self.draw.textbbox((0, 0), test_line, font=self.font_tiny)
-                
-                if bbox[2] < (self.WIDTH - 160):
-                    current_line = test_line
-                else:
-                    if current_line:
-                        lines.append(current_line)
-                    current_line = word
+        Returns:
+            list: قائمة الأسطر
+        """
+        words = text.split()
+        lines = []
+        current_line = ""
+
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            bbox = self.draw.textbbox((0, 0), test_line, font=font)
             
-            if current_line:
-                lines.append(current_line)
-            
-            # رسم القراءة في صندوق
-            card_margin = 60
-            card_x1 = card_margin
-            card_x2 = self.WIDTH - card_margin
-            
-            # حساب ارتفاع البطاقة
-            line_height = 28
-            total_height = len(lines) * line_height + 30
-            
-            card_y1 = y_offset - 15
-            card_y2 = y_offset + total_height
-            
-            self.draw.rounded_rectangle(
-                [(card_x1, card_y1), (card_x2, card_y2)],
-                radius=10,
-                outline=self.GOLD_COLOR,
-                width=1
-            )
-            
-            # رسم الأسطر
-            for i, line in enumerate(lines[:4]):  # الحد الأقصى 4 أسطر
-                line_y = y_offset + i * line_height
-                self.draw.text(
-                    (card_x1 + 15, line_y),
-                    line,
-                    font=self.font_tiny,
-                    fill=self.TEXT_SECONDARY,
-                    anchor="lm"
-                )
-    
+            if bbox[2] < max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+
+        if current_line:
+            lines.append(current_line)
+
+        return lines
+
     def draw_footer(self):
-        """رسم التذييل"""
-        y_offset = self.HEIGHT - 90
-        
+        """رسم التذييل مع هوية راصد"""
+        padding = IMAGE["padding"]
+        y_start = IMAGE["height"] - 180
+
         # خط فاصل
-        self.draw.line(
-            [(self.WIDTH // 2 - 150, y_offset), (self.WIDTH // 2 + 150, y_offset)],
-            fill=self.GOLD_COLOR,
-            width=2
-        )
-        
-        y_offset += 25
-        
-        # نص التحذير
-        warning_text = "محتوى تعليمي وتحليلي فقط - لا يعد توصية استثمارية"
-        self.draw.text(
-            (self.WIDTH // 2, y_offset),
-            warning_text,
-            font=self.font_tiny,
-            fill=self.TEXT_SECONDARY,
-            anchor="mm"
-        )
-        
-        # رابط القناة
-        y_offset += 35
-        channel_text = "t.me/TASI_Smart"
-        
-        badge_width = 200
-        badge_height = 30
-        badge_x1 = (self.WIDTH - badge_width) // 2
-        badge_y1 = y_offset - badge_height // 2
-        
-        self.draw.rounded_rectangle(
-            [(badge_x1, badge_y1), (badge_x1 + badge_width, badge_y1 + badge_height)],
-            radius=15,
-            outline=self.GOLD_COLOR,
-            width=2
-        )
-        
-        self.draw.text(
-            (self.WIDTH // 2, y_offset),
-            channel_text,
-            font=self.font_small,
-            fill=self.GOLD_COLOR,
-            anchor="mm"
-        )
-    
-    def save_image(self, output_path: str = "output.png") -> bool:
+        self.draw.line([(padding, y_start), (IMAGE["width"]-padding, y_start)],
+                      fill=BRAND["muted"], width=1)
+        y_start += 30
+
+        # التحذير
+        warning_text = "⚠️ محتوى تعليمي وتحليلي فقط — لا يعد توصية استثمارية"
+        self.draw.text((IMAGE["width"]//2, y_start), warning_text,
+                      font=self.fonts["tiny"], fill=BRAND["muted"], anchor="mm")
+        y_start += 35
+
+        # التاريخ والوقت
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        time_text = f"🕐 {timestamp}"
+        self.draw.text((IMAGE["width"]//2, y_start), time_text,
+                      font=self.fonts["tiny"], fill=BRAND["text_secondary"], anchor="mm")
+        y_start += 40
+
+        # هوية راصد
+        branding_text = f"👁️ {BRANDING['name']} | {BRANDING['slogan']}"
+        self.draw.text((IMAGE["width"]//2, y_start), branding_text,
+                      font=self.fonts["small"], fill=BRAND["accent"], anchor="mm")
+
+    def save_image(self, output_path: str = None) -> bool:
         """
         حفظ الصورة
         
         Args:
             output_path: مسار الحفظ
-        
+            
         Returns:
             bool: True إذا نجح الحفظ
         """
+        output_path = output_path or DATA["output_image"]
+        
         try:
+            # التأكد من وجود المجلد
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
-            
+
+            # الحفظ بجودة عالية
             self.img.save(output_file, "PNG", quality=95)
             print(f"✅ تم حفظ الصورة: {output_file.absolute()}")
             return True
-            
+
         except Exception as e:
             print(f"❌ خطأ في حفظ الصورة: {e}")
             return False
-    
-    def generate(self, output_path: str = "output.png") -> bool:
+
+    def generate(self, output_path: str = None) -> bool:
         """
         توليد الصورة الكاملة
         
         Args:
             output_path: مسار الحفظ
-        
+            
         Returns:
             bool: True إذا نجح التوليد
         """
         try:
+            print("=" * 60)
+            print(f"👁️ {BRANDING['name']} - مولّد الصور")
+            print("=" * 60)
             print("🎨 بدء توليد الصورة...")
-            
+
             # تحميل البيانات
             if not self.load_data():
                 return False
-            
+
             # إنشاء الصورة
             self.create_base_image()
             self.draw_header()
-            self.draw_stock_name()
-            self.draw_price_data()
-            self.draw_indicators()
-            self.draw_technical_reading()
+            self.draw_stock_info()
+            self.draw_targets()
+            self.draw_analysis()
             self.draw_footer()
-            
+
             # الحفظ
             return self.save_image(output_path)
-            
+
         except Exception as e:
             print(f"❌ خطأ غير متوقع: {e}")
             import traceback
@@ -626,26 +484,17 @@ class SignalImageGenerator:
 
 def main():
     """الدالة الرئيسية"""
-    print("=" * 60)
-    print("📊 Rasid Auto Posting - Image Generator")
-    print("=" * 60)
-    
     # تحديد مسار المخرج من المعاملات
-    output_file = "output.png"
-    is_golden = False
-    
+    output_file = DATA["output_image"]
     if len(sys.argv) > 1:
         output_file = sys.argv[1]
-    
-    if len(sys.argv) > 2:
-        is_golden = sys.argv[2].lower() in ['golden', 'true', '1']
-    
+
     # إنشاء المولد
-    generator = SignalImageGenerator("data/daily.json", is_golden=is_golden)
-    
+    generator = RasedSignalGenerator("data/daily.json")
+
     # التوليد
     success = generator.generate(output_file)
-    
+
     if success:
         print("\n✅ تم التوليد بنجاح!")
         sys.exit(0)
@@ -656,4 +505,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
