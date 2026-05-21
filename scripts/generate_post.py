@@ -24,7 +24,6 @@ try:
     from config import BRAND, FONT, BRANDING, IMAGE, DATA
 except ImportError:
     print("⚠️ تحذير: ملف config.py غير موجود - استخدام الإعدادات الافتراضية")
-    # إعدادات افتراضية في حال عدم وجود config.py
     BRAND = {
         "primary": "#0F1A3C",
         "accent": "#D4AF37",
@@ -37,6 +36,7 @@ except ImportError:
     }
     FONT = {
         "arabic": "Tajawal",
+        "path": "assets/fonts",
         "sizes": {"title": 48, "large": 32, "medium": 24, "small": 18, "tiny": 14}
     }
     BRANDING = {
@@ -50,54 +50,43 @@ except ImportError:
         "padding": 80,
         "card_radius": 15,
     }
+    DATA = {
+        "daily_file": "data/daily.json",
+        "output_image": "output.png",
+    }
 
 
 class RasedSignalGenerator:
     """مُولّد صور إشارات راصد الاحترافية"""
 
     def __init__(self, data_file: str = None):
-        """
-        تهيئة المولد
-        
-        Args:
-            data_file: مسار ملف البيانات JSON
-        """
         self.data_file = Path(data_file or DATA["daily_file"])
         self.data = None
         self.img = None
         self.draw = None
-        
-        # تحميل الخطوط
         self._load_fonts()
 
     def _load_fonts(self):
         """تحميل خطوط راصد"""
         font_sizes = FONT["sizes"]
+        font_path = FONT.get("path", "assets/fonts")
         
         self.fonts = {
-            "title": self._load_font("Bold", font_sizes["title"]),
-            "large": self._load_font("Bold", font_sizes["large"]),
-            "medium": self._load_font("Regular", font_sizes["medium"]),
-            "small": self._load_font("Regular", font_sizes["small"]),
-            "tiny": self._load_font("Light", font_sizes["tiny"]),
+            "title": self._load_font(font_path, "Bold", font_sizes["title"]),
+            "large": self._load_font(font_path, "Bold", font_sizes["large"]),
+            "medium": self._load_font(font_path, "Regular", font_sizes["medium"]),
+            "small": self._load_font(font_path, "Regular", font_sizes["small"]),
+            "tiny": self._load_font(font_path, "Light", font_sizes["tiny"]),
         }
 
-    def _load_font(self, weight: str, size: int):
-        """
-        تحميل الخط مع fallback
-        
-        Args:
-            weight: وزن الخط (Bold, Regular, etc.)
-            size: حجم الخط
-            
-        Returns:
-            ImageFont object
-        """
-        # محاولة تحميل خط Tajawal من مجلد assets
+    def _load_font(self, base_path: str, weight: str, size: int):
+        """تحميل الخط مع fallback"""
+        font_name = FONT["arabic"]
         font_paths = [
-            f"assets/fonts/Tajawal-{weight}.ttf",
+            f"{base_path}/{font_name}-{weight}.ttf",
+            f"{base_path}/{weight}.ttf",
+            f"assets/fonts/{font_name}-{weight}.ttf",
             f"assets/fonts/{weight}.ttf",
-            f"fonts/Tajawal-{weight}.ttf",
         ]
         
         for font_path in font_paths:
@@ -107,25 +96,14 @@ class RasedSignalGenerator:
             except Exception:
                 continue
         
-        # محاولة تحميل من النظام
+        # Fallback للنظام
         try:
-            return ImageFont.truetype(f"arial.ttf", size)
-        except Exception:
-            pass
-        
-        # الخط الافتراضي
-        try:
-            return ImageFont.load_default()
+            return ImageFont.truetype("arial.ttf", size)
         except Exception:
             return ImageFont.load_default()
 
     def load_data(self) -> bool:
-        """
-        تحميل البيانات من ملف JSON
-        
-        Returns:
-            bool: True إذا نجح التحميل
-        """
+        """تحميل البيانات من ملف JSON"""
         try:
             if not self.data_file.exists():
                 print(f"❌ ملف البيانات غير موجود: {self.data_file}")
@@ -134,7 +112,6 @@ class RasedSignalGenerator:
             with open(self.data_file, 'r', encoding='utf-8') as f:
                 self.data = json.load(f)
 
-            # التحقق من الحقول المطلوبة
             required_fields = ['stock_name', 'stock_symbol', 'current_price',
                              'entry_point', 'target1', 'stop_loss']
             
@@ -157,42 +134,33 @@ class RasedSignalGenerator:
         """إنشاء الصورة الأساسية مع خلفية راصد"""
         self.img = Image.new('RGB', (IMAGE["width"], IMAGE["height"]), BRAND["primary"])
         self.draw = ImageDraw.Draw(self.img)
-        
-        # إضافة تدرج لوني خفيف للخلفية
         self._add_gradient_background()
 
     def _add_gradient_background(self):
         """إضافة تدرج لوني للخلفية"""
-        # إنشاء تدرج من الكحلي الداكن إلى الأسود في الأسفل
         for y in range(IMAGE["height"]):
-            # حساب نسبة الارتفاع (0 في الأعلى، 1 في الأسفل)
             ratio = y / IMAGE["height"]
-            
-            # مزج اللون الأساسي مع الأسود
             r = int(BRAND["primary"][1:3], 16) * (1 - ratio * 0.3)
             g = int(BRAND["primary"][3:5], 16) * (1 - ratio * 0.3)
             b = int(BRAND["primary"][5:7], 16) * (1 - ratio * 0.3)
-            
             self.draw.line([(0, y), (IMAGE["width"], y)], fill=(int(r), int(g), int(b)))
 
     def draw_header(self):
         """رسم الرأس مع شعار راصد"""
         padding = IMAGE["padding"]
         
-        # الشعار (أيقونة العين)
-        logo_text = "👁️"
-        self.draw.text((padding, 50), logo_text, 
+        # أيقونة العين
+        self.draw.text((padding, 50), "👁️", 
                       font=self.fonts["title"], fill=BRAND["accent"])
         
-        # عنوان "إشارة اليوم"
+        # العنوان
         title = f"{BRANDING['name']} | إشارة اليوم"
         self.draw.text((IMAGE["width"]//2, 60), title,
                       font=self.fonts["large"], fill=BRAND["text_primary"], anchor="mm")
         
-        # الخط الفاصل الذهبي
-        y_offset = 110
-        self.draw.line([(padding, y_offset), (IMAGE["width"]-padding, y_offset)],
-                      fill=BRAND["accent"], width=IMAGE["line_width"])
+        # خط فاصل ذهبي
+        self.draw.line([(padding, 110), (IMAGE["width"]-padding, 110)],
+                      fill=BRAND["accent"], width=3)
 
     def draw_stock_info(self):
         """رسم معلومات السهم"""
@@ -202,7 +170,7 @@ class RasedSignalGenerator:
         y_start = 180
         padding = IMAGE["padding"]
 
-        # اسم السهم والرمز
+        # اسم السهم
         stock_text = f"{self.data['stock_name']} — {self.data['stock_symbol']}"
         self.draw.text((IMAGE["width"]//2, y_start), stock_text,
                       font=self.fonts["large"], fill=BRAND["success"], anchor="mm")
@@ -214,21 +182,13 @@ class RasedSignalGenerator:
             self.draw.text((IMAGE["width"]//2, y_start), sector_text,
                           font=self.fonts["medium"], fill=BRAND["text_secondary"], anchor="mm")
 
-        # السعر الحالي (بطاقة مميزة)
+        # السعر الحالي
         y_start += 90
         price_text = f"💰 السعر الحالي: {self.data['current_price']} ريال"
         self._draw_card(price_text, y_start, BRAND["accent"], highlight=True)
 
     def _draw_card(self, text: str, y: int, color: str = None, highlight: bool = False):
-        """
-        رسم بطاقة نصية
-        
-        Args:
-            text: النص
-            y: الموضع العمودي
-            color: لون النص
-            highlight: هل البطاقة مميزة
-        """
+        """رسم بطاقة نصية"""
         padding = IMAGE["padding"]
         card_width = IMAGE["width"] - (padding * 2)
         card_height = 80 if not highlight else 90
@@ -243,7 +203,7 @@ class RasedSignalGenerator:
         bg_color = BRAND["accent"] if highlight else BRAND["card_bg"]
         self.draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=radius, fill=bg_color)
 
-        # حدود ذهبية للبطاقات المميزة
+        # حدود للبطاقات المميزة
         if highlight:
             self.draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=radius, 
                                        outline=BRAND["text_primary"], width=2)
@@ -252,7 +212,7 @@ class RasedSignalGenerator:
         text_color = BRAND["primary"] if highlight else (color or BRAND["text_primary"])
         font = self.fonts["large"] if highlight else self.fonts["medium"]
         
-        # حساب موضع النص للتوسيط
+        # توسيط النص
         bbox = self.draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         x_text = (x1 + x2) // 2
@@ -340,12 +300,11 @@ class RasedSignalGenerator:
                           font=self.fonts["small"], fill=BRAND["text_primary"])
             y_start += 40
 
-            # تقسيم النص الطويل
             reading = self.data['technical_reading']
             lines = self._wrap_text(reading, max_width=IMAGE["width"]-(padding*2), 
                                    font=self.fonts["tiny"])
             
-            for line in lines[:6]:  # الحد الأقصى 6 أسطر
+            for line in lines[:6]:
                 self.draw.text((padding, y_start), f" • {line}",
                               font=self.fonts["tiny"], fill=BRAND["text_secondary"])
                 y_start += 32
@@ -359,17 +318,7 @@ class RasedSignalGenerator:
                           font=self.fonts["small"], fill=conf_color)
 
     def _wrap_text(self, text: str, max_width: int, font) -> list:
-        """
-        تقسيم النص الطويل إلى أسطر متعددة
-        
-        Args:
-            text: النص
-            max_width: العرض الأقصى
-            font: الخط المستخدم
-            
-        Returns:
-            list: قائمة الأسطر
-        """
+        """تقسيم النص الطويل إلى أسطر"""
         words = text.split()
         lines = []
         current_line = ""
@@ -419,52 +368,30 @@ class RasedSignalGenerator:
                       font=self.fonts["small"], fill=BRAND["accent"], anchor="mm")
 
     def save_image(self, output_path: str = None) -> bool:
-        """
-        حفظ الصورة
-        
-        Args:
-            output_path: مسار الحفظ
-            
-        Returns:
-            bool: True إذا نجح الحفظ
-        """
+        """حفظ الصورة"""
         output_path = output_path or DATA["output_image"]
         
         try:
-            # التأكد من وجود المجلد
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
-
-            # الحفظ بجودة عالية
             self.img.save(output_file, "PNG", quality=95)
             print(f"✅ تم حفظ الصورة: {output_file.absolute()}")
             return True
-
         except Exception as e:
             print(f"❌ خطأ في حفظ الصورة: {e}")
             return False
 
     def generate(self, output_path: str = None) -> bool:
-        """
-        توليد الصورة الكاملة
-        
-        Args:
-            output_path: مسار الحفظ
-            
-        Returns:
-            bool: True إذا نجح التوليد
-        """
+        """توليد الصورة الكاملة"""
         try:
             print("=" * 60)
             print(f"👁️ {BRANDING['name']} - مولّد الصور")
             print("=" * 60)
             print("🎨 بدء توليد الصورة...")
 
-            # تحميل البيانات
             if not self.load_data():
                 return False
 
-            # إنشاء الصورة
             self.create_base_image()
             self.draw_header()
             self.draw_stock_info()
@@ -472,7 +399,6 @@ class RasedSignalGenerator:
             self.draw_analysis()
             self.draw_footer()
 
-            # الحفظ
             return self.save_image(output_path)
 
         except Exception as e:
@@ -484,15 +410,11 @@ class RasedSignalGenerator:
 
 def main():
     """الدالة الرئيسية"""
-    # تحديد مسار المخرج من المعاملات
     output_file = DATA["output_image"]
     if len(sys.argv) > 1:
         output_file = sys.argv[1]
 
-    # إنشاء المولد
     generator = RasedSignalGenerator("data/daily.json")
-
-    # التوليد
     success = generator.generate(output_file)
 
     if success:
