@@ -2,6 +2,12 @@
 # -*- coding: utf-8 -*-
 """Rased Brand Configuration - إعدادات هوية راصد"""
 
+BRANDING = {
+    "name": "راصد",
+    "slogan": "عينك على الفرص",
+    ...
+}
+
 BRAND = {
     "primary": "#0F1A3C",
     "accent": "#D4AF37",
